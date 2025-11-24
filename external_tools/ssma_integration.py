@@ -1,6 +1,24 @@
 """
 SSMA Agent - Microsoft SQL Server Migration Assistant Integration
-Primary conversion tool, LLMs used only when SSMA fails or produces warnings
+
+⚠️ IMPORTANT: This integration is currently NOT FUNCTIONAL ⚠️
+
+SSMA Console requires XML script files, not direct SQL conversion.
+The command-line interface expects:
+  -s|script scriptfile  (XML file with SSMA commands)
+  -c|serverconnection   (XML file with connection info)
+
+This agent was designed assuming SSMA could convert SQL directly,
+but SSMA Console is designed for batch project migrations, not
+on-the-fly code conversion of individual objects.
+
+To use SSMA properly, you would need to:
+1. Create SSMA project files
+2. Write XML scripts for each conversion
+3. Pre-configure database connections
+4. Process entire schemas/projects at once
+
+For this migration tool, the LLM-based converter is more appropriate.
 """
 
 import logging
@@ -61,18 +79,21 @@ class SSMAAgent:
         """Check if SSMA is available and executable"""
         if not self.ssma_console_path:
             return False
-        
+
         if not Path(self.ssma_console_path).exists():
             return False
-        
+
         try:
-            # Try to run SSMA with --version or --help
+            # Try to run SSMA with /? (Windows style help)
             result = subprocess.run(
-                [self.ssma_console_path, "--help"],
+                [self.ssma_console_path, "/?"],
                 capture_output=True,
                 timeout=5
             )
-            return result.returncode == 0
+            # SSMA returns various codes, but if it runs at all, it's available
+            # Check if output contains expected SSMA text
+            output = (result.stdout + result.stderr).decode('utf-8', errors='ignore')
+            return "SSMA" in output or "Migration Assistant" in output or "Enter /? for help" in output
         except Exception as e:
             logger.warning(f"SSMA availability check failed: {e}")
             return False

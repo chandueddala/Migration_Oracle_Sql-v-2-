@@ -242,7 +242,20 @@ class OracleConnector:
         # Convert to list of dictionaries
         result = []
         for row in rows:
-            row_dict = dict(zip(columns, row))
+            # Convert LOB objects to strings/bytes
+            converted_row = []
+            for value in row:
+                if value is not None and hasattr(value, 'read'):
+                    # This is a LOB object (CLOB/BLOB)
+                    try:
+                        lob_data = value.read()
+                        converted_row.append(lob_data)
+                    except:
+                        converted_row.append(None)
+                else:
+                    converted_row.append(value)
+
+            row_dict = dict(zip(columns, converted_row))
             result.append(row_dict)
 
         return result

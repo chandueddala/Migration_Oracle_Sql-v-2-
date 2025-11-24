@@ -24,6 +24,14 @@ from agents.memory_agent import MemoryAgent
 
 logger = logging.getLogger(__name__)
 
+# Use enhanced dynamic decomposer that works with any Oracle package structure
+try:
+    from utils.package_decomposer_enhanced import decompose_oracle_package
+    logger.info("✅ Using enhanced dynamic package decomposer")
+except ImportError:
+    from utils.package_decomposer import decompose_oracle_package
+    logger.info("⚠️ Using basic package decomposer")
+
 
 class MigrationOrchestrator:
     """
@@ -175,32 +183,33 @@ class MigrationOrchestrator:
     def orchestrate_code_object_migration(self, obj_name: str, obj_type: str) -> Dict[str, Any]:
         """
         Complete workflow for procedure/function/package migration
-        
+
         Args:
             obj_name: Object name
             obj_type: PROCEDURE, FUNCTION, PACKAGE, or TRIGGER
-            
+
         Returns:
             Migration result dictionary
         """
         logger.info(f"🔄 Orchestrating {obj_type} migration: {obj_name}")
         print(f"\n  🔄 Orchestrating: {obj_name} ({obj_type})")
-        
+
+        # SPECIAL HANDLING FOR PACKAGES
+        if obj_type == "PACKAGE":
+            return self._orchestrate_package_migration(obj_name)
+
         try:
             # Step 1: Get Oracle code
             print("    📥 Step 1/5: Fetching Oracle code...")
-            
-            if obj_type == "PACKAGE":
-                oracle_code = self.oracle_conn.get_package_code(obj_name)
-            else:
-                oracle_code = self.oracle_conn.get_code_object(obj_name, obj_type)
-            
+
+            oracle_code = self.oracle_conn.get_code_object(obj_name, obj_type)
+
             if not oracle_code:
                 return self._failure_result(
                     obj_name, obj_type,
                     f"Failed to fetch {obj_type} code from Oracle"
                 )
-            
+
             logger.info(f"✅ Retrieved {obj_type} code for {obj_name}: {len(oracle_code)} chars")
 
             # Step 2: Convert (SSMA or LLM)
@@ -299,12 +308,26 @@ class MigrationOrchestrator:
         
         try:
             logger.info(f"🔧 Using SSMA to convert {obj_name}")
-            result = self.ssma.convert_code(source_code, obj_name, obj_type)
-            
-            if result.get("status") == "success":
-                logger.info(f"✅ SSMA conversion successful for {obj_name}")
-                return result.get("tsql_code", "")
+            result = self.ssma.convert_object(source_code, obj_name, obj_type)
+
+            # Check if LLM fallback is recommended
+            if result.get("use_llm_fallback", False):
+                logger.warning(f"⚠️ SSMA recommends LLM fallback for {obj_name}")
+                if obj_type == "TABLE":
+                    return self.converter.convert_table_ddl(source_code, obj_name)
+                else:
+                    return self.converter.convert_code(source_code, obj_name, obj_type)
+
+            # SSMA conversion succeeded
+            if result.get("status") in ["success", "warning"]:
+                tsql = result.get("tsql", "")
+                if result.get("status") == "warning":
+                    logger.warning(f"⚠️ SSMA conversion has warnings for {obj_name}: {len(result.get('warnings', []))} warnings")
+                else:
+                    logger.info(f"✅ SSMA conversion successful for {obj_name}")
+                return tsql
             else:
+                # SSMA failed
                 logger.warning(f"⚠️ SSMA conversion failed for {obj_name}, falling back to LLM")
                 if obj_type == "TABLE":
                     return self.converter.convert_table_ddl(source_code, obj_name)
@@ -443,6 +466,167 @@ class MigrationOrchestrator:
 
         return result
     
+    def _orchestrate_package_migration(self, package_name: str) -> Dict[str, Any]:
+        """
+        Special handling for Oracle packages - DECOMPOSE into individual objects
+
+        Oracle packages are NOT supported in SQL Server.
+        We decompose them into individual procedures and functions.
+
+        Args:
+            package_name: Name of the Oracle package
+
+        Returns:
+            Migration result with details of all decomposed members
+        """
+        logger.info(f"📦 Decomposing Oracle package: {package_name}")
+        print(f"\n  📦 PACKAGE DECOMPOSITION: {package_name}")
+        print("  ⚠️  SQL Server does not support packages - decomposing into individual objects")
+
+        try:
+            # Step 1: Get package code from Oracle
+            print("    📥 Step 1/4: Fetching package code from Oracle...")
+            oracle_code = self.oracle_conn.get_package_code(package_name)
+
+            if not oracle_code:
+                return self._failure_result(
+                    package_name, "PACKAGE",
+                    "Failed to fetch package code from Oracle"
+                )
+
+            logger.info(f"✅ Retrieved package code: {len(oracle_code)} chars")
+
+            # Step 2: Decompose package into individual members
+            print("    🔧 Step 2/4: Decomposing package into procedures/functions...")
+            decomposed = decompose_oracle_package(package_name, oracle_code)
+
+            total_members = len(decomposed["members"])
+            logger.info(
+                f"✅ Decomposed into {total_members} members: "
+                f"{decomposed['total_procedures']} procedures, "
+                f"{decomposed['total_functions']} functions"
+            )
+            print(f"       Found {total_members} members to migrate:")
+            print(f"       - {decomposed['total_procedures']} procedures")
+            print(f"       - {decomposed['total_functions']} functions")
+
+            if decomposed["global_variables"]:
+                print(f"       ⚠️  {len(decomposed['global_variables'])} global variables detected")
+                logger.warning(f"Package has {len(decomposed['global_variables'])} global variables")
+
+            # Step 3: Migrate each member individually
+            print("    🚀 Step 3/4: Migrating individual members...")
+            results = []
+            success_count = 0
+            failure_count = 0
+
+            for i, member in enumerate(decomposed["members"], 1):
+                # Generate SQL Server object name (PackageName_MemberName)
+                sqlserver_name = f"{package_name}_{member.name}"
+                print(f"\n       [{i}/{total_members}] Migrating: {member.name} ({member.member_type})")
+                print(f"                          → SQL Server name: {sqlserver_name}")
+
+                # Convert member code
+                if self.ssma_available:
+                    tsql = self._convert_with_ssma(member.body, sqlserver_name, member.member_type)
+                else:
+                    tsql = self.converter.convert_code(
+                        oracle_code=member.body,
+                        object_name=sqlserver_name,
+                        object_type=member.member_type
+                    )
+
+                if not tsql:
+                    logger.error(f"Failed to convert {member.name}")
+                    failure_count += 1
+                    results.append({
+                        "member_name": member.name,
+                        "sqlserver_name": sqlserver_name,
+                        "status": "error",
+                        "message": "Conversion failed"
+                    })
+                    continue
+
+                # Apply schema fixes
+                tsql = self._fix_schema_references(tsql)
+
+                # Review (optional)
+                if MAX_REFLECTION_ITERATIONS > 0:
+                    review = self.reviewer.review_code(
+                        oracle_code=member.body,
+                        tsql_code=tsql,
+                        object_name=sqlserver_name,
+                        object_type=member.member_type,
+                        cost_tracker=self.cost_tracker
+                    )
+                    logger.info(f"Review for {sqlserver_name}: {review.get('overall_quality', 'N/A')}")
+
+                # Deploy
+                deploy_result = self.debugger.deploy_with_repair(
+                    sql_code=tsql,
+                    object_name=sqlserver_name,
+                    object_type=member.member_type,
+                    oracle_code=member.body,
+                    sqlserver_creds=self.sqlserver_creds
+                )
+
+                if deploy_result.get("status") == "success":
+                    success_count += 1
+                    print(f"                          ✅ Success")
+                    logger.info(f"✅ Successfully migrated {sqlserver_name}")
+
+                    # Update memory
+                    self._refresh_and_update_memory(sqlserver_name, member.member_type)
+                else:
+                    failure_count += 1
+                    print(f"                          ❌ Failed: {deploy_result.get('message', 'Unknown')[:50]}")
+                    logger.error(f"❌ Failed to migrate {sqlserver_name}")
+
+                    # Log unresolved error
+                    self._log_unresolved_error(
+                        sqlserver_name, member.member_type,
+                        deploy_result.get("error_history", []),
+                        member.body,
+                        deploy_result.get("final_attempt", "")
+                    )
+
+                results.append({
+                    "member_name": member.name,
+                    "sqlserver_name": sqlserver_name,
+                    "type": member.member_type,
+                    "status": deploy_result.get("status"),
+                    "message": deploy_result.get("message", "")
+                })
+
+            # Step 4: Summary
+            print(f"\n    📊 Step 4/4: Package decomposition summary")
+            print(f"       ✅ Successfully migrated: {success_count}/{total_members}")
+            print(f"       ❌ Failed: {failure_count}/{total_members}")
+
+            if decomposed["initialization"]:
+                print(f"       ⚠️  Package initialization code detected - requires manual migration")
+                logger.warning("Package has initialization code that requires manual handling")
+
+            # Return comprehensive result
+            return {
+                "status": "success" if failure_count == 0 else "partial",
+                "object_name": package_name,
+                "object_type": "PACKAGE",
+                "strategy": "DECOMPOSED",
+                "total_members": total_members,
+                "success_count": success_count,
+                "failure_count": failure_count,
+                "members": results,
+                "has_global_variables": len(decomposed["global_variables"]) > 0,
+                "has_initialization": bool(decomposed["initialization"]),
+                "notes": decomposed["migration_plan"]["notes"],
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Package decomposition failed for {package_name}: {e}", exc_info=True)
+            return self._failure_result(package_name, "PACKAGE", str(e))
+
     def _failure_result(self, obj_name: str, obj_type: str, message: str) -> Dict:
         """Create standardized failure result"""
         return {

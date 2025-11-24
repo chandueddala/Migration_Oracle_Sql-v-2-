@@ -212,7 +212,29 @@ class MigrationMemory:
             "failed_patterns": len(self._failed_patterns),
             "error_solutions": sum(len(v) for v in self._error_solutions.values()),
         }
-    
+
+    def find_similar_error_solutions(self, error_code):
+        """
+        Find similar error solutions based on error code.
+
+        Args:
+            error_code: Error code to search for
+
+        Returns:
+            List of similar error solutions
+        """
+        # Search through all error solutions for similar error codes
+        similar_solutions = []
+        for error_key, solutions in self._error_solutions.items():
+            if error_code in error_key or error_key in error_code:
+                similar_solutions.extend(solutions)
+        return similar_solutions
+
+    @property
+    def table_mappings(self):
+        """Provide access to table mappings for compatibility"""
+        return self._table_mappings
+
     def clear(self):
         """Clear all memory (useful for testing)"""
         self._identity_columns.clear()

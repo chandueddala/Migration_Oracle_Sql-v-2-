@@ -186,7 +186,7 @@ def run_migration_orchestrated():
     
     # Check SSMA availability
     try:
-        from ssma_agent import is_ssma_available
+        from external_tools.ssma_integration import is_ssma_available
         if is_ssma_available():
             print("âœ… SSMA available - will be used as primary converter")
             orchestrator.ssma_available = True

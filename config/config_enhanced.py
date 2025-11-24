@@ -54,9 +54,15 @@ ENABLE_WEB_SEARCH = True  # Enable/disable web search for error resolution
 MAX_SEARCH_RESULTS = 5  # Top N search results to include
 
 # ==================== SSMA INTEGRATION ====================
-SSMA_ENABLED = os.getenv("SSMA_ENABLED", "false").lower() == "true"
+# SSMA Console is currently disabled because it requires:
+# 1. XML script files (not direct SQL conversion)
+# 2. Pre-configured project files
+# 3. Database connections configured in advance
+# SSMA is designed for batch migrations, not on-the-fly code conversion.
+# The LLM-based converter is more suitable for this use case.
+SSMA_ENABLED = False  # Disabled - SSMA Console requires XML scripts, not direct SQL conversion
 SSMA_CONSOLE_PATH = os.getenv("SSMA_CONSOLE_PATH", None)
-USE_SSMA_FIRST = True  # Try SSMA before LLM
+USE_SSMA_FIRST = False  # Try LLM instead (SSMA disabled)
 LLM_FALLBACK_ON_SSMA_WARNINGS = True  # Use LLM if SSMA has >5 warnings
 
 # ==================== SECURITY SETTINGS ====================
@@ -148,16 +154,48 @@ class CostTracker:
         in_tok = _approx_tokens(prompt)
         out_tok = _approx_tokens(completion)
         in_cost = out_cost = 0.0
-        
+
         if price:
             in_cost = (in_tok / 1000.0) * price["input"]
             out_cost = (out_tok / 1000.0) * price["output"]
-        
+
         self.rows.append({
             "provider": provider,
             "model": model,
             "input_tokens": in_tok,
             "output_tokens": out_tok,
+            "input_cost": in_cost,
+            "output_cost": out_cost,
+            "total_cost": in_cost + out_cost
+        })
+
+    def track_request(self, model: str, input_tokens: int, output_tokens: int):
+        """
+        Track request by token counts (for compatibility with root_cause_analyzer)
+
+        Args:
+            model: Model identifier (e.g., 'claude-sonnet-4-20250514')
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens
+        """
+        # Determine provider from model name
+        provider = "anthropic"
+        if "gpt" in model.lower() or "openai" in model.lower():
+            provider = "openai"
+
+        key = f"{provider}/{model}"
+        price = PRICING.get(key)
+        in_cost = out_cost = 0.0
+
+        if price:
+            in_cost = (input_tokens / 1000.0) * price["input"]
+            out_cost = (output_tokens / 1000.0) * price["output"]
+
+        self.rows.append({
+            "provider": provider,
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
             "input_cost": in_cost,
             "output_cost": out_cost,
             "total_cost": in_cost + out_cost

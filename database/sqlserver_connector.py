@@ -87,22 +87,41 @@ class SQLServerConnector:
     def execute_ddl(self, ddl: str) -> Dict[str, Any]:
         """
         Execute DDL statement (CREATE, ALTER, DROP)
-        
+
+        Handles GO batch separators by splitting and executing each batch separately.
+
         Args:
             ddl: DDL statement string
-            
+
         Returns:
             Dict with status and message
         """
         try:
             cursor = self.connection.cursor()
-            cursor.execute(ddl)
-            self.connection.commit()
+
+            # Remove markdown code blocks if present
+            ddl = ddl.strip()
+            if ddl.startswith('```'):
+                lines = ddl.split('\n')
+                ddl = '\n'.join(lines[1:-1]) if len(lines) > 2 else ddl
+
+            # Split by GO statements (batch separator)
+            # GO must be on its own line
+            import re
+            batches = re.split(r'^\s*GO\s*$', ddl, flags=re.IGNORECASE | re.MULTILINE)
+
+            # Execute each batch
+            for batch in batches:
+                batch = batch.strip()
+                if batch:  # Skip empty batches
+                    cursor.execute(batch)
+                    self.connection.commit()
+
             cursor.close()
-            
+
             logger.info("✅ DDL executed successfully")
             return {"status": "success", "message": "DDL executed successfully"}
-            
+
         except pyodbc.Error as e:
             self.connection.rollback()
             error_msg = str(e)
@@ -201,10 +220,12 @@ class SQLServerConnector:
             
             cursor.executemany(query, rows)
             self.connection.commit()
-            
-            row_count = cursor.rowcount
+
+            # Note: cursor.rowcount returns -1 with executemany() in pyodbc
+            # Use the actual number of rows processed
+            row_count = len(rows)
             cursor.close()
-            
+
             logger.info(f"✅ Inserted {row_count} rows into {table_name}")
             return row_count
             
