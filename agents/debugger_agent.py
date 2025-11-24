@@ -79,9 +79,55 @@ class DebuggerAgent:
                         "attempts": attempt
                     }
                 else:
-                    # Deployment failed - repair and retry
+                    # Deployment failed - check if object already exists
                     error_msg = result.get("message", "Unknown error")
                     logger.warning(f"Deployment failed (attempt {attempt}): {error_msg[:100]}")
+
+                    # Check for "object already exists" error (42S01)
+                    if attempt == 1 and self._is_object_exists_error(error_msg):
+                        logger.info(f"Object {object_name} already exists - prompting user")
+
+                        # Import here to avoid circular dependency
+                        from utils.user_prompt import prompt_existing_object
+
+                        user_choice = prompt_existing_object(
+                            object_name=object_name,
+                            object_type=object_type,
+                            timeout=30
+                        )
+
+                        if user_choice == 'skip':
+                            logger.info(f"User chose to skip {object_name}")
+                            return {
+                                "status": "skipped",
+                                "message": f"Skipped {object_name} (user choice)",
+                                "user_action": "skip"
+                            }
+                        elif user_choice == 'drop':
+                            logger.info(f"User chose to drop and recreate {object_name}")
+                            # Prepend DROP statement to SQL
+                            if object_type.upper() == "TABLE":
+                                sql_code = f"DROP TABLE IF EXISTS [{object_name}];\n{sql_code}"
+                            elif object_type.upper() in ["PROCEDURE", "PROC"]:
+                                sql_code = f"DROP PROCEDURE IF EXISTS [{object_name}];\n{sql_code}"
+                            elif object_type.upper() == "FUNCTION":
+                                sql_code = f"DROP FUNCTION IF EXISTS [{object_name}];\n{sql_code}"
+                            elif object_type.upper() == "TRIGGER":
+                                sql_code = f"DROP TRIGGER IF EXISTS [{object_name}];\n{sql_code}"
+                            elif object_type.upper() == "VIEW":
+                                sql_code = f"DROP VIEW IF EXISTS [{object_name}];\n{sql_code}"
+
+                            # Retry deployment with DROP statement
+                            continue
+                        elif user_choice == 'append':
+                            logger.info(f"User chose to append data to existing {object_name}")
+                            # For tables, skip structure creation and go straight to data migration
+                            return {
+                                "status": "success",
+                                "message": f"Table {object_name} exists - will append data",
+                                "user_action": "append",
+                                "skip_structure": True
+                            }
 
                     error_history.append({
                         "attempt": attempt,
@@ -90,7 +136,7 @@ class DebuggerAgent:
                     })
 
                     if attempt < self.max_attempts:
-                        # Try to repair
+                        # Try to repair using AGENTIC approach
                         repair_result = self.debug_and_repair(
                             sql_code=sql_code,
                             error_message=error_msg,
@@ -100,7 +146,8 @@ class DebuggerAgent:
                             web_search_results=None,
                             memory_solutions=[],
                             cost_tracker=self.cost_tracker,
-                            oracle_code=oracle_code
+                            oracle_code=oracle_code,
+                            sqlserver_creds=sqlserver_creds
                         )
 
                         if repair_result.get("status") == "success":
@@ -127,7 +174,7 @@ class DebuggerAgent:
             "error_history": error_history
         }
 
-    def debug_and_repair(self, 
+    def debug_and_repair(self,
                         sql_code: str,
                         error_message: str,
                         object_name: str,
@@ -136,28 +183,36 @@ class DebuggerAgent:
                         web_search_results: Optional[str],
                         memory_solutions: List[Dict],
                         cost_tracker: CostTracker,
-                        oracle_code: Optional[str] = None) -> Dict[str, Any]:
+                        oracle_code: Optional[str] = None,
+                        sqlserver_creds: Optional[Dict] = None) -> Dict[str, Any]:
         """
-        Analyze error and generate repair
-        
+        AGENTIC ERROR REPAIR - Uses intelligent Root Cause Analyzer
+
+        This method uses a multi-step agentic approach:
+        1. Classify error intelligently
+        2. Gather context from multiple sources (Oracle + SQL + Memory + Web)
+        3. Perform root cause analysis
+        4. Generate targeted fix based on deep understanding
+
         Args:
             sql_code: Failed SQL code
             error_message: SQL Server error message
             object_name: Object name
             object_type: TABLE, PROCEDURE, FUNCTION, TRIGGER
             error_history: List of previous attempts
-            web_search_results: Results from web search
+            web_search_results: Results from web search (will be gathered if needed)
             memory_solutions: Known solutions from memory
             cost_tracker: Cost tracking
             oracle_code: Original Oracle code (optional)
-            
+            sqlserver_creds: SQL Server credentials for metadata gathering
+
         Returns:
             Repair result with fixed SQL
         """
-        logger.info(f"Debugging {object_name}: {error_message[:100]}...")
-        
+        logger.info(f"🤖 Starting AGENTIC repair for {object_name}: {error_message[:100]}...")
+
         attempt_num = len(error_history) + 1
-        
+
         if attempt_num > self.max_attempts:
             logger.error(f"Max repair attempts ({self.max_attempts}) exceeded for {object_name}")
             return {
@@ -165,7 +220,97 @@ class DebuggerAgent:
                 "message": f"Max repair attempts exceeded",
                 "fixed_sql": sql_code
             }
-        
+
+        # Use Root Cause Analyzer for intelligent, agentic repair
+        try:
+            from agents.root_cause_analyzer import RootCauseAnalyzer
+
+            print(f"\n       🤖 AGENTIC REPAIR MODE - Attempt {attempt_num}/{self.max_attempts}")
+            print(f"       📝 Using multi-step root cause analysis...")
+
+            # Initialize Root Cause Analyzer
+            analyzer = RootCauseAnalyzer(cost_tracker=cost_tracker)
+
+            # Perform intelligent analysis and fix generation
+            analysis_result = analyzer.analyze_and_fix(
+                sql_code=sql_code,
+                error_message=error_message,
+                object_name=object_name,
+                object_type=object_type,
+                oracle_code=oracle_code,
+                sqlserver_creds=sqlserver_creds
+            )
+
+            if analysis_result.get("status") == "success":
+                fixed_sql = analysis_result["fix"]["fixed_sql"]
+                root_cause = analysis_result["root_cause"]
+
+                print(f"       ✅ Root Cause: {root_cause['diagnosis'][:100]}")
+                print(f"       🔧 Confidence: {root_cause['confidence']}")
+                print(f"       📊 Fix Strategy: {analysis_result['fix']['strategy']}")
+
+                logger.info(f"Agentic repair generated for {object_name} (attempt {attempt_num})")
+
+                return {
+                    "status": "success",
+                    "fixed_sql": fixed_sql,
+                    "attempt_num": attempt_num,
+                    "root_cause": root_cause['diagnosis'],
+                    "confidence": root_cause['confidence'],
+                    "analysis": analysis_result,
+                    "method": "agentic_root_cause_analysis"
+                }
+            else:
+                logger.warning(f"Root Cause Analyzer failed, falling back to standard repair")
+                # Fall back to standard repair if analyzer fails
+                return self._fallback_repair(
+                    sql_code=sql_code,
+                    error_message=error_message,
+                    object_name=object_name,
+                    object_type=object_type,
+                    error_history=error_history,
+                    oracle_code=oracle_code,
+                    cost_tracker=cost_tracker,
+                    attempt_num=attempt_num
+                )
+
+        except ImportError:
+            logger.warning("Root Cause Analyzer not available, using standard repair")
+            return self._fallback_repair(
+                sql_code=sql_code,
+                error_message=error_message,
+                object_name=object_name,
+                object_type=object_type,
+                error_history=error_history,
+                oracle_code=oracle_code,
+                cost_tracker=cost_tracker,
+                attempt_num=attempt_num
+            )
+        except Exception as e:
+            logger.error(f"Agentic repair failed: {e}", exc_info=True)
+            return self._fallback_repair(
+                sql_code=sql_code,
+                error_message=error_message,
+                object_name=object_name,
+                object_type=object_type,
+                error_history=error_history,
+                oracle_code=oracle_code,
+                cost_tracker=cost_tracker,
+                attempt_num=attempt_num
+            )
+
+    def _fallback_repair(self,
+                        sql_code: str,
+                        error_message: str,
+                        object_name: str,
+                        object_type: str,
+                        error_history: List[Dict],
+                        oracle_code: Optional[str],
+                        cost_tracker: CostTracker,
+                        attempt_num: int) -> Dict[str, Any]:
+        """Fallback to basic repair if agentic approach unavailable"""
+        logger.info(f"Using fallback repair method for {object_name}")
+
         # Build comprehensive repair prompt
         prompt = self._build_repair_prompt(
             sql_code=sql_code,
@@ -173,33 +318,34 @@ class DebuggerAgent:
             object_name=object_name,
             object_type=object_type,
             error_history=error_history,
-            web_search_results=web_search_results,
-            memory_solutions=memory_solutions,
+            web_search_results=None,
+            memory_solutions=[],
             oracle_code=oracle_code,
             attempt_num=attempt_num
         )
-        
+
         try:
             response = self.model.invoke(prompt)
             result_text = response.content
-            
+
             # Track cost
             cost_tracker.add("anthropic", CLAUDE_SONNET_MODEL, prompt, result_text)
-            
+
             # Extract fixed SQL
             fixed_sql = self._extract_sql(result_text, object_type)
-            
-            logger.info(f"Generated repair attempt {attempt_num} for {object_name}")
-            
+
+            logger.info(f"Generated fallback repair attempt {attempt_num} for {object_name}")
+
             return {
                 "status": "success",
                 "fixed_sql": fixed_sql,
                 "attempt_num": attempt_num,
-                "explanation": result_text[:500]  # First 500 chars
+                "explanation": result_text[:500],
+                "method": "fallback_repair"
             }
-            
+
         except Exception as e:
-            logger.error(f"Repair generation failed for {object_name}: {e}", exc_info=True)
+            logger.error(f"Fallback repair generation failed for {object_name}: {e}", exc_info=True)
             return {
                 "status": "error",
                 "message": str(e),
@@ -320,6 +466,32 @@ OUTPUT: Return ONLY executable SQL code, nothing else."""
                     break
         
         return text
+
+    def _is_object_exists_error(self, error_message: str) -> bool:
+        """
+        Check if error is "object already exists" error
+
+        Args:
+            error_message: SQL Server error message
+
+        Returns:
+            True if object already exists error
+        """
+        error_patterns = [
+            "42S01",  # SQLSTATE code for object already exists
+            "2714",   # SQL Server error code for object already exists
+            "There is already an object named",
+            "already exists",
+            "Cannot create",
+            "object name"
+        ]
+
+        error_lower = error_message.lower()
+        for pattern in error_patterns:
+            if pattern.lower() in error_lower:
+                return True
+
+        return False
 
 
 # Global instance

@@ -35,6 +35,17 @@ sys.path.insert(0, str(BASE_DIR))
 # Set PYTHONPATH environment variable
 os.environ['PYTHONPATH'] = str(BASE_DIR)
 
+# Apply hot-fixes (temporary until migration_engine.py can be edited)
+try:
+    import hotfix_oracle_connector
+except ImportError:
+    pass  # Hot-fix not available
+
+try:
+    import hotfix_connection
+except ImportError:
+    pass  # Hot-fix not available
+
 import logging
 
 def setup_logging():

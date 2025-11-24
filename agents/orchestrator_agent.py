@@ -105,15 +105,16 @@ class MigrationOrchestrator:
             logger.info(f"✅ Retrieved DDL for {table_name}: {len(oracle_ddl)} chars")
             
             # Step 2: Convert (SSMA or LLM)
-            print("    🔄 Step 2/5: Converting to SQL Server...")
             if self.ssma_available:
+                print("    🔄 Step 2/5: Converting to SQL Server (using SSMA)...")
                 tsql = self._convert_with_ssma(oracle_ddl, table_name, "TABLE")
             else:
+                print("    🔄 Step 2/5: Converting to SQL Server (using LLM)...")
                 tsql = self.converter.convert_table_ddl(
                     oracle_ddl=oracle_ddl,
                     table_name=table_name
                 )
-            
+
             if not tsql:
                 return self._failure_result(
                     table_name, "TABLE",
@@ -201,12 +202,13 @@ class MigrationOrchestrator:
                 )
             
             logger.info(f"✅ Retrieved {obj_type} code for {obj_name}: {len(oracle_code)} chars")
-            
+
             # Step 2: Convert (SSMA or LLM)
-            print("    🔄 Step 2/5: Converting to T-SQL...")
             if self.ssma_available:
+                print("    🔄 Step 2/5: Converting to T-SQL (using SSMA)...")
                 tsql = self._convert_with_ssma(oracle_code, obj_name, obj_type)
             else:
+                print("    🔄 Step 2/5: Converting to T-SQL (using LLM)...")
                 tsql = self.converter.convert_code(
                     oracle_code=oracle_code,
                     object_name=obj_name,

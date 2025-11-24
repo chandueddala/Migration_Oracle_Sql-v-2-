@@ -192,28 +192,61 @@ class OracleConnector:
     def get_table_data(self, table_name: str, batch_size: int = 1000):
         """
         Generator to fetch table data in batches
-        
+
         Args:
             table_name: Name of the table
             batch_size: Number of rows per batch
-            
+
         Yields:
             Batches of rows
         """
         cursor = self.connection.cursor()
         cursor.arraysize = batch_size
-        
+
         query = f"SELECT * FROM {table_name}"
         cursor.execute(query)
-        
+
         while True:
             rows = cursor.fetchmany(batch_size)
             if not rows:
                 break
             yield rows
-        
+
         cursor.close()
-    
+
+    def fetch_table_data(self, table_name: str):
+        """
+        Fetch all table data as a list of dictionaries
+
+        This is different from get_table_data which returns a generator.
+        This method loads all data into memory and returns it as a list.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            List of dictionaries (one per row)
+        """
+        cursor = self.connection.cursor()
+
+        query = f"SELECT * FROM {table_name}"
+        cursor.execute(query)
+
+        # Get column names
+        columns = [col[0] for col in cursor.description]
+
+        # Fetch all rows
+        rows = cursor.fetchall()
+        cursor.close()
+
+        # Convert to list of dictionaries
+        result = []
+        for row in rows:
+            row_dict = dict(zip(columns, row))
+            result.append(row_dict)
+
+        return result
+
     def __enter__(self):
         """Context manager entry"""
         self.connect()

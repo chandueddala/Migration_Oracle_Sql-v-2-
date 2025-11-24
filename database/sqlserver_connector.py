@@ -255,11 +255,11 @@ class SQLServerConnector:
     def set_identity_insert(self, table_name: str, enabled: bool) -> bool:
         """
         Enable or disable IDENTITY_INSERT for a table
-        
+
         Args:
             table_name: Name of the table
             enabled: True to enable, False to disable
-            
+
         Returns:
             True if successful
         """
@@ -273,7 +273,55 @@ class SQLServerConnector:
         except Exception as e:
             logger.error(f"Failed to set IDENTITY_INSERT: {e}")
             return False
-    
+
+    def bulk_insert_data(self, table_name: str, data: List[Dict], identity_columns: List[str] = None) -> int:
+        """
+        Bulk insert data into table from list of dictionaries
+
+        Args:
+            table_name: Name of the table
+            data: List of dictionaries (one per row)
+            identity_columns: List of IDENTITY column names (optional)
+
+        Returns:
+            Number of rows inserted
+        """
+        if not data:
+            return 0
+
+        try:
+            # Enable IDENTITY_INSERT if needed
+            if identity_columns:
+                self.set_identity_insert(table_name, True)
+
+            # Get column names from first row
+            columns = list(data[0].keys())
+
+            # Convert list of dicts to list of tuples
+            rows = []
+            for row_dict in data:
+                row_tuple = tuple(row_dict.get(col) for col in columns)
+                rows.append(row_tuple)
+
+            # Use insert_batch method
+            row_count = self.insert_batch(table_name, columns, rows)
+
+            # Disable IDENTITY_INSERT if it was enabled
+            if identity_columns:
+                self.set_identity_insert(table_name, False)
+
+            return row_count
+
+        except Exception as e:
+            # Make sure to disable IDENTITY_INSERT even if error occurs
+            if identity_columns:
+                try:
+                    self.set_identity_insert(table_name, False)
+                except:
+                    pass
+            logger.error(f"Bulk insert failed for {table_name}: {e}")
+            raise
+
     def __enter__(self):
         """Context manager entry"""
         self.connect()
