@@ -1,0 +1,12 @@
+1.python oracle_Database/seed_retail_schema.py
+
+
+
+
+Checking the oracle oracle_Database
+
+python oracle_Database/oracle_check.py
+
+
+#######################
+python oracle_Database/seed_loans_schema.py
