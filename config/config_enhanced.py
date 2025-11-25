@@ -11,6 +11,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Suppress Pydantic/LangSmith warnings about UUID v7
+import warnings
+warnings.filterwarnings("ignore", message="LangSmith now uses UUID v7")
+
+
 # ==================== API KEYS ====================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")

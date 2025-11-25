@@ -76,6 +76,9 @@ class OracleConnector:
             return results
         except Exception as e:
             logger.error(f"Query execution failed: {e}")
+            logger.error(f"Failed Query: {query}")
+            if params:
+                logger.error(f"Parameters: {params}")
             raise
     
     def get_table_ddl(self, table_name: str) -> str:
@@ -115,6 +118,9 @@ class OracleConnector:
         results = self.execute_query(query, (package_name,))
         return ''.join([row[0] for row in results])
 
+        results = self.execute_query(query, (object_name, object_type))
+        return ''.join([row[0] for row in results])
+
     def get_object_code(self, object_name: str, object_type: str) -> str:
         """
         Get source code for procedures, functions, triggers
@@ -134,6 +140,60 @@ class OracleConnector:
         """
         results = self.execute_query(query, (object_name, object_type))
         return ''.join([row[0] for row in results])
+
+    def get_code_object(self, object_name: str, object_type: str) -> str:
+        """
+        Get source code for any object type (wrapper)
+        
+        Args:
+            object_name: Name of the object
+            object_type: Object type (SEQUENCE, VIEW, PROCEDURE, etc.)
+            
+        Returns:
+            Source code string
+        """
+        if object_type == 'SEQUENCE':
+            return self.get_sequence_ddl(object_name)
+        elif object_type == 'VIEW':
+            return self.get_view_ddl(object_name)
+        elif object_type == 'TABLE':
+            return self.get_table_ddl(object_name)
+        elif object_type == 'PACKAGE':
+            return self.get_package_code(object_name)
+        else:
+            return self.get_object_code(object_name, object_type)
+
+    def get_sequence_ddl(self, sequence_name: str) -> str:
+        """Get DDL for a sequence"""
+        query = f"SELECT DBMS_METADATA.GET_DDL('SEQUENCE', '{sequence_name}') FROM DUAL"
+        result = self.execute_query(query)
+        if result:
+            return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
+        return ""
+
+    def get_view_ddl(self, view_name: str) -> str:
+        """Get DDL for a view"""
+        query = f"SELECT DBMS_METADATA.GET_DDL('VIEW', '{view_name}') FROM DUAL"
+        result = self.execute_query(query)
+        if result:
+            return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
+        return ""
+
+    def get_sequence_ddl(self, sequence_name: str) -> str:
+        """Get DDL for a sequence"""
+        query = f"SELECT DBMS_METADATA.GET_DDL('SEQUENCE', '{sequence_name}') FROM DUAL"
+        result = self.execute_query(query)
+        if result:
+            return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
+        return ""
+
+    def get_view_ddl(self, view_name: str) -> str:
+        """Get DDL for a view"""
+        query = f"SELECT DBMS_METADATA.GET_DDL('VIEW', '{view_name}') FROM DUAL"
+        result = self.execute_query(query)
+        if result:
+            return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
+        return ""
     
     def list_tables(self) -> List[str]:
         """Get list of all user tables"""

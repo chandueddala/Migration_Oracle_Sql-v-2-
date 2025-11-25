@@ -1,0 +1,28 @@
+# Core dependencies
+anthropic==0.71.0
+langchain==1.0.0
+langchain-anthropic==1.0.0
+langchain-core==1.0.0
+langchain-openai==1.0.0
+openai==2.5.0
+
+# Database drivers
+oracledb==3.4.0
+pyodbc==5.3.0
+
+# Data processing
+pandas==2.2.2
+numpy==2.2.0
+
+# Web framework
+streamlit==1.40.0
+plotly==5.24.0
+
+# Utilities
+python-dotenv==1.1.1
+pydantic==2.12.3
+requests==2.32.5
+pyyaml==6.0.3
+rich==13.9.0
+colorlog==6.9.0
+tqdm==4.67.1

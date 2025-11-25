@@ -24,6 +24,19 @@ from agents.memory_agent import MemoryAgent
 
 logger = logging.getLogger(__name__)
 
+# Safe print function for Windows compatibility with emojis
+import sys
+def safe_print(message: str):
+    """Print message, handling Unicode errors on Windows"""
+    try:
+        sys.stdout.write(message + '\n')
+        sys.stdout.flush()
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # Remove emojis and special characters for Windows compatibility
+        safe_msg = message.encode('ascii', 'ignore').decode('ascii')
+        sys.stdout.write(safe_msg + '\n')
+        sys.stdout.flush()
+
 # Use LLM-POWERED decomposer - truly dynamic, works with ANY package structure
 try:
     from utils.package_decomposer_llm import decompose_oracle_package
@@ -59,16 +72,17 @@ class MigrationOrchestrator:
     Manages workflow: Discovery → Conversion → Review → Deploy → Memory Update
     """
     
-    def __init__(self, oracle_creds: Dict, sqlserver_creds: Dict, cost_tracker: CostTracker):
+    def __init__(self, oracle_creds: Dict, sqlserver_creds: Dict, cost_tracker: CostTracker, migration_options: Dict = None):
         self.oracle_creds = oracle_creds
         self.sqlserver_creds = sqlserver_creds
         self.cost_tracker = cost_tracker
+        self.migration_options = migration_options or {}
         
         # Initialize agents
         self.memory = MigrationMemory()
         self.converter = ConverterAgent(cost_tracker)
         self.reviewer = ReviewerAgent(cost_tracker)
-        self.debugger = DebuggerAgent(cost_tracker)
+        self.debugger = DebuggerAgent(cost_tracker, self.migration_options)
         self.memory_agent = MemoryAgent(self.memory, cost_tracker)
         
         # Initialize and connect to databases
@@ -117,11 +131,11 @@ class MigrationOrchestrator:
             Migration result dictionary
         """
         logger.info(f"🔄 Orchestrating table migration: {table_name}")
-        print(f"\n  🔄 Orchestrating: {table_name}")
+        safe_print(f"\n  🔄 Orchestrating: {table_name}")
         
         try:
             # Step 1: Get Oracle DDL
-            print("    📥 Step 1/5: Fetching Oracle DDL...")
+            safe_print("    📥 Step 1/5: Fetching Oracle DDL...")
             oracle_ddl = self.oracle_conn.get_table_ddl(table_name)
             
             if not oracle_ddl:
@@ -134,10 +148,10 @@ class MigrationOrchestrator:
             
             # Step 2: Convert (SSMA or LLM)
             if self.ssma_available:
-                print("    🔄 Step 2/5: Converting to SQL Server (using SSMA)...")
+                safe_print("    🔄 Step 2/5: Converting to SQL Server (using SSMA)...")
                 tsql = self._convert_with_ssma(oracle_ddl, table_name, "TABLE")
             else:
-                print("    🔄 Step 2/5: Converting to SQL Server (using LLM)...")
+                safe_print("    🔄 Step 2/5: Converting to SQL Server (using LLM)...")
                 tsql = self.converter.convert_table_ddl(
                     oracle_ddl=oracle_ddl,
                     table_name=table_name
@@ -156,7 +170,7 @@ class MigrationOrchestrator:
             
             # Step 3: Review (optional for tables)
             if MAX_REFLECTION_ITERATIONS > 0:
-                print("    👁️ Step 3/5: Reviewing conversion...")
+                safe_print("    👁️ Step 3/5: Reviewing conversion...")
                 review = self.reviewer.review_code(
                     oracle_code=oracle_ddl,
                     tsql_code=tsql,
@@ -166,10 +180,10 @@ class MigrationOrchestrator:
                 )
                 logger.info(f"Review for {table_name}: {review.get('overall_quality', 'N/A')}")
             else:
-                print("    ⏭️  Step 3/5: Review skipped (disabled)")
+                safe_print("    ⏭️  Step 3/5: Review skipped (disabled)")
             
             # Step 4: Deploy with repairs
-            print("    🚀 Step 4/5: Deploying to SQL Server...")
+            safe_print("    🚀 Step 4/5: Deploying to SQL Server...")
             deploy_result = self.debugger.deploy_with_repair(
                 sql_code=tsql,
                 object_name=table_name,
@@ -180,10 +194,10 @@ class MigrationOrchestrator:
             
             if deploy_result.get("status") == "success":
                 # Step 5: Refresh metadata and update memory
-                print("    🔄 Step 5/5: Updating memory with SQL Server metadata...")
+                safe_print("    🔄 Step 5/5: Updating memory with SQL Server metadata...")
                 self._refresh_and_update_memory(table_name, "TABLE")
                 
-                print("    ✅ Table migration successful")
+                safe_print("    ✅ Table migration successful")
                 return deploy_result
             else:
                 # Step 6: Log unresolved error
@@ -193,7 +207,7 @@ class MigrationOrchestrator:
                     oracle_ddl,
                     deploy_result.get("final_attempt", "")
                 )
-                print(f"    ❌ Migration failed: {deploy_result.get('message', 'Unknown')[:50]}...")
+                safe_print(f"    ❌ Migration failed: {deploy_result.get('message', 'Unknown')[:50]}...")
                 return deploy_result
         
         except Exception as e:
@@ -212,7 +226,7 @@ class MigrationOrchestrator:
             Migration result dictionary
         """
         logger.info(f"🔄 Orchestrating {obj_type} migration: {obj_name}")
-        print(f"\n  🔄 Orchestrating: {obj_name} ({obj_type})")
+        safe_print(f"\n  🔄 Orchestrating: {obj_name} ({obj_type})")
 
         # SPECIAL HANDLING FOR PACKAGES
         if obj_type == "PACKAGE":
@@ -220,7 +234,7 @@ class MigrationOrchestrator:
 
         try:
             # Step 1: Get Oracle code
-            print("    📥 Step 1/5: Fetching Oracle code...")
+            safe_print("    📥 Step 1/5: Fetching Oracle code...")
 
             oracle_code = self.oracle_conn.get_code_object(obj_name, obj_type)
 
@@ -234,10 +248,10 @@ class MigrationOrchestrator:
 
             # Step 2: Convert (SSMA or LLM)
             if self.ssma_available:
-                print("    🔄 Step 2/5: Converting to T-SQL (using SSMA)...")
+                safe_print("    🔄 Step 2/5: Converting to T-SQL (using SSMA)...")
                 tsql = self._convert_with_ssma(oracle_code, obj_name, obj_type)
             else:
-                print("    🔄 Step 2/5: Converting to T-SQL (using LLM)...")
+                safe_print("    🔄 Step 2/5: Converting to T-SQL (using LLM)...")
                 tsql = self.converter.convert_code(
                     oracle_code=oracle_code,
                     object_name=obj_name,
@@ -256,7 +270,7 @@ class MigrationOrchestrator:
             tsql = self._fix_schema_references(tsql)
             
             # Step 3: Review
-            print("    👁️ Step 3/5: Reviewing conversion quality...")
+            safe_print("    👁️ Step 3/5: Reviewing conversion quality...")
             review = self.reviewer.review_code(
                 oracle_code=oracle_code,
                 tsql_code=tsql,
@@ -267,7 +281,7 @@ class MigrationOrchestrator:
             logger.info(f"Review for {obj_name}: {review.get('overall_quality', 'N/A')}")
             
             # Step 4: Deploy with repairs
-            print("    🚀 Step 4/5: Deploying to SQL Server...")
+            safe_print("    🚀 Step 4/5: Deploying to SQL Server...")
             deploy_result = self.debugger.deploy_with_repair(
                 sql_code=tsql,
                 object_name=obj_name,
@@ -278,7 +292,7 @@ class MigrationOrchestrator:
             
             if deploy_result.get("status") == "success":
                 # Step 5: Refresh metadata and update memory
-                print("    🔄 Step 5/5: Updating memory with SQL Server metadata...")
+                safe_print("    🔄 Step 5/5: Updating memory with SQL Server metadata...")
                 self._refresh_and_update_memory(obj_name, obj_type)
                 
                 # Store success pattern
@@ -290,7 +304,7 @@ class MigrationOrchestrator:
                     review_quality=review.get('overall_quality')
                 )
                 
-                print(f"    ✅ {obj_type} migration successful")
+                safe_print(f"    ✅ {obj_type} migration successful")
                 return deploy_result
             else:
                 # Step 6: Log unresolved error
@@ -300,7 +314,7 @@ class MigrationOrchestrator:
                     oracle_code,
                     deploy_result.get("final_attempt", "")
                 )
-                print(f"    ❌ Migration failed: {deploy_result.get('message', 'Unknown')[:50]}...")
+                safe_print(f"    ❌ Migration failed: {deploy_result.get('message', 'Unknown')[:50]}...")
                 return deploy_result
         
         except Exception as e:
@@ -387,73 +401,55 @@ class MigrationOrchestrator:
                     
                     logger.info(f"✅ Updated memory: {obj_name} with {len(columns)} columns")
             
-            elif obj_type in ["PROCEDURE", "FUNCTION", "PACKAGE"]:
-                # Get object definition from SQL Server
-                definition = self.sqlserver_conn.get_object_definition(obj_name, obj_type)
-                
-                if definition:
-                    logger.info(f"✅ Retrieved SQL Server definition for {obj_name}: {len(definition)} chars")
+            # NOTE: Metadata refresh for procedures/functions disabled
+            # get_object_definition() method not implemented in SQLServerConnector
+            # elif obj_type in ["PROCEDURE", "FUNCTION", "PACKAGE"]:
+            #     # Get object definition from SQL Server
+            #     definition = self.sqlserver_conn.get_object_definition(obj_name, obj_type)
+            #     
+            #     if definition:
+            #         logger.info(f"✅ Retrieved SQL Server definition for {obj_name}: {len(definition)} chars")
         
         except Exception as e:
             logger.error(f"❌ Failed to refresh metadata for {obj_name}: {e}")
             # Don't fail the migration, just log
-    
     def _log_unresolved_error(self, obj_name: str, obj_type: str,
                              error_history: List, oracle_code: str,
                              final_attempt: str):
         """
-        Log unresolved errors for future analysis and retry
+        Log unresolved errors for future analysis and retry (JSONL format)
         """
-        logs_dir = Path("logs/unresolved")
+        logs_dir = Path("logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
+        log_file = logs_dir / "unresolved_migrations.jsonl"
         
         log_entry = {
             "object_name": obj_name,
             "object_type": obj_type,
             "timestamp": datetime.now().isoformat(),
-            "oracle_code": oracle_code[:2000],  # Truncate for readability
+            "oracle_code": oracle_code,
             "error_history": error_history,
-            "final_sql_attempt": final_attempt[:2000],
-            "total_repair_attempts": len(error_history),
-            "unresolved_reason": "Max repair attempts exceeded without success",
-            "memory_context": {
-                "identity_columns": self.memory.get_identity_columns(obj_name),
-                "similar_patterns": [
-                    p.get('name', 'unnamed') 
-                    for p in self.memory.get_similar_patterns(obj_type, limit=3)
-                ],
-                "error_solutions_available": len(
-                    self.memory.get_error_solutions(
-                        error_history[-1]['error'] if error_history else "", 
-                        limit=3
-                    )
-                )
-            },
-            "recommendations": [
-                "Review error history for patterns",
-                "Check if manual T-SQL adjustment is needed",
-                "Consider schema or constraint issues",
-                "Verify Oracle code compatibility with SQL Server"
-            ]
+            "final_attempt_sql": final_attempt,
+            "status": "unresolved"
         }
         
-        timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = logs_dir / f"{obj_name}_{timestamp_str}.json"
-        
-        with open(log_file, 'w') as f:
-            json.dump(log_entry, f, indent=2)
-        
-        logger.error(f"⚠️ Unresolved error logged: {log_file}")
-        print(f"    📝 Unresolved error logged to: {log_file}")
-        
-        # Also store in shared memory
-        self.memory.store_failed_pattern({
-            "name": f"{obj_type}_{obj_name}_unresolved",
-            "object_type": obj_type,
-            "error": error_history[-1]['error'][:200] if error_history else "Unknown",
-            "timestamp": datetime.now().isoformat(),
-            "log_file": str(log_file)
-        })
+        try:
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(log_entry) + '\n')
+            
+            logger.error(f"⚠️ Unresolved error logged to {log_file}")
+            safe_print(f"    📝 Unresolved error logged to: {log_file}")
+            
+            # Also store in shared memory
+            self.memory.store_failed_pattern({
+                "name": f"{obj_type}_{obj_name}_unresolved",
+                "object_type": obj_type,
+                "error": error_history[-1]['error'][:200] if error_history else "Unknown",
+                "timestamp": datetime.now().isoformat(),
+                "log_file": str(log_file)
+            })
+        except Exception as e:
+            logger.error(f"Failed to log unresolved error: {e}")
     
     def _fix_schema_references(self, sql_code: str, target_schema: str = "dbo") -> str:
         """Fix schema references in SQL code - handles both quoted and unquoted identifiers"""
@@ -500,12 +496,12 @@ class MigrationOrchestrator:
             Migration result with details of all decomposed members
         """
         logger.info(f"📦 Decomposing Oracle package: {package_name}")
-        print(f"\n  📦 PACKAGE DECOMPOSITION: {package_name}")
-        print("  ⚠️  SQL Server does not support packages - decomposing into individual objects")
+        safe_print(f"\n  📦 PACKAGE DECOMPOSITION: {package_name}")
+        safe_print("  ⚠️  SQL Server does not support packages - decomposing into individual objects")
 
         try:
             # Step 1: Get package code from Oracle
-            print("    📥 Step 1/4: Fetching package code from Oracle...")
+            safe_print("    📥 Step 1/4: Fetching package code from Oracle...")
             oracle_code = self.oracle_conn.get_package_code(package_name)
 
             if not oracle_code:
@@ -517,7 +513,7 @@ class MigrationOrchestrator:
             logger.info(f"✅ Retrieved package code: {len(oracle_code)} chars")
 
             # Step 2: Decompose package into individual members
-            print("    🔧 Step 2/4: Decomposing package into procedures/functions...")
+            safe_print("    🔧 Step 2/4: Decomposing package into procedures/functions...")
             decomposed = decompose_oracle_package(package_name, oracle_code)
 
             total_members = len(decomposed["members"])
@@ -526,16 +522,16 @@ class MigrationOrchestrator:
                 f"{decomposed['total_procedures']} procedures, "
                 f"{decomposed['total_functions']} functions"
             )
-            print(f"       Found {total_members} members to migrate:")
-            print(f"       - {decomposed['total_procedures']} procedures")
-            print(f"       - {decomposed['total_functions']} functions")
+            safe_print(f"       Found {total_members} members to migrate:")
+            safe_print(f"       - {decomposed['total_procedures']} procedures")
+            safe_print(f"       - {decomposed['total_functions']} functions")
 
             if decomposed["global_variables"]:
-                print(f"       ⚠️  {len(decomposed['global_variables'])} global variables detected")
+                safe_print(f"       ⚠️  {len(decomposed['global_variables'])} global variables detected")
                 logger.warning(f"Package has {len(decomposed['global_variables'])} global variables")
 
             # Step 3: Migrate each member individually
-            print("    🚀 Step 3/4: Migrating individual members...")
+            safe_print("    🚀 Step 3/4: Migrating individual members...")
             results = []
             success_count = 0
             failure_count = 0
@@ -543,8 +539,8 @@ class MigrationOrchestrator:
             for i, member in enumerate(decomposed["members"], 1):
                 # Generate SQL Server object name (PackageName_MemberName)
                 sqlserver_name = f"{package_name}_{member.name}"
-                print(f"\n       [{i}/{total_members}] Migrating: {member.name} ({member.member_type})")
-                print(f"                          → SQL Server name: {sqlserver_name}")
+                safe_print(f"\n       [{i}/{total_members}] Migrating: {member.name} ({member.member_type})")
+                safe_print(f"                          → SQL Server name: {sqlserver_name}")
 
                 # Convert member code
                 if self.ssma_available:
@@ -592,14 +588,14 @@ class MigrationOrchestrator:
 
                 if deploy_result.get("status") == "success":
                     success_count += 1
-                    print(f"                          ✅ Success")
+                    safe_print(f"                          ✅ Success")
                     logger.info(f"✅ Successfully migrated {sqlserver_name}")
 
                     # Update memory
                     self._refresh_and_update_memory(sqlserver_name, member.member_type)
                 else:
                     failure_count += 1
-                    print(f"                          ❌ Failed: {deploy_result.get('message', 'Unknown')[:50]}")
+                    safe_print(f"                          ❌ Failed: {deploy_result.get('message', 'Unknown')[:50]}")
                     logger.error(f"❌ Failed to migrate {sqlserver_name}")
 
                     # Log unresolved error
@@ -619,12 +615,12 @@ class MigrationOrchestrator:
                 })
 
             # Step 4: Summary
-            print(f"\n    📊 Step 4/4: Package decomposition summary")
-            print(f"       ✅ Successfully migrated: {success_count}/{total_members}")
-            print(f"       ❌ Failed: {failure_count}/{total_members}")
+            safe_print(f"\n    📊 Step 4/4: Package decomposition summary")
+            safe_print(f"       ✅ Successfully migrated: {success_count}/{total_members}")
+            safe_print(f"       ❌ Failed: {failure_count}/{total_members}")
 
             if decomposed["initialization"]:
-                print(f"       ⚠️  Package initialization code detected - requires manual migration")
+                safe_print(f"       ⚠️  Package initialization code detected - requires manual migration")
                 logger.warning("Package has initialization code that requires manual handling")
 
             # Return comprehensive result

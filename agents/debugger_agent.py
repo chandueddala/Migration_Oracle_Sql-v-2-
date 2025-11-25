@@ -23,13 +23,14 @@ class DebuggerAgent:
     Uses Claude Sonnet for efficient error analysis and repair
     """
     
-    def __init__(self, cost_tracker: CostTracker = None):
+    def __init__(self, cost_tracker: CostTracker = None, migration_options: Dict = None):
         self.model = ChatAnthropic(
             model=CLAUDE_SONNET_MODEL,
             temperature=0.1,  # Low temperature for consistent fixes
             max_tokens=8192
         )
         self.cost_tracker = cost_tracker
+        self.migration_options = migration_options or {}
         self.max_attempts = MAX_REPAIR_ATTEMPTS
         logger.info(f"Debugger Agent initialized (max {self.max_attempts} attempts)")
 
@@ -84,17 +85,41 @@ class DebuggerAgent:
                     logger.warning(f"Deployment failed (attempt {attempt}): {error_msg[:100]}")
 
                     # Check for "object already exists" error (42S01)
-                    if attempt == 1 and self._is_object_exists_error(error_msg):
-                        logger.info(f"Object {object_name} already exists - prompting user")
-
-                        # Import here to avoid circular dependency
-                        from utils.user_prompt import prompt_existing_object
-
-                        user_choice = prompt_existing_object(
-                            object_name=object_name,
-                            object_type=object_type,
-                            timeout=30
-                        )
+                    if self._is_object_exists_error(error_msg):
+                        logger.info(f"Object {object_name} already exists (detected in attempt {attempt})")
+                        
+                        # Check if strategy is provided in options
+                        strategy = self.migration_options.get('conflict_strategy')
+                        
+                        if strategy:
+                            logger.info(f"Using configured conflict strategy: {strategy}")
+                            if strategy == 'SKIP_EXISTING':
+                                user_choice = 'skip'
+                            elif strategy == 'DROP_AND_CREATE':
+                                user_choice = 'drop'
+                            elif strategy == 'CREATE_OR_ALTER':
+                                # Try to convert to CREATE OR ALTER if possible, else drop
+                                user_choice = 'drop' 
+                            elif strategy == 'FAIL_ON_CONFLICT':
+                                return {
+                                    "status": "error",
+                                    "message": f"Object {object_name} already exists (FAIL_ON_CONFLICT selected)"
+                                }
+                            else:
+                                # Default fallback
+                                user_choice = 'drop'
+                        else:
+                            # Interactive prompt (legacy/CLI mode)
+                            logger.info(f"No strategy configured - prompting user")
+                            
+                            # Import here to avoid circular dependency
+                            from utils.user_prompt import prompt_existing_object
+    
+                            user_choice = prompt_existing_object(
+                                object_name=object_name,
+                                object_type=object_type,
+                                timeout=30
+                            )
 
                         if user_choice == 'skip':
                             logger.info(f"User chose to skip {object_name}")
@@ -242,37 +267,45 @@ class DebuggerAgent:
             )
 
             if analysis_result.get("status") == "success":
-                fixed_sql = analysis_result["fix"]["fixed_sql"]
-                root_cause = analysis_result["root_cause"]
+                # Safely get fixed_sql, defaulting to None if missing
+                fix_data = analysis_result.get("fix", {})
+                fixed_sql = fix_data.get("fixed_sql")
+                
+                if not fixed_sql:
+                    logger.warning("Analysis successful but 'fixed_sql' missing")
+                    # Fall through to fallback repair
+                else:
+                    root_cause = analysis_result["root_cause"]
 
-                print(f"       ✅ Root Cause: {root_cause['diagnosis'][:100]}")
-                print(f"       🔧 Confidence: {root_cause['confidence']}")
-                print(f"       📊 Fix Strategy: {analysis_result['fix']['strategy']}")
+                    print(f"       ✅ Root Cause: {root_cause['diagnosis'][:100]}")
+                    print(f"       🔧 Confidence: {root_cause['confidence']}")
+                    print(f"       📊 Fix Strategy: {analysis_result['fix']['strategy']}")
 
-                logger.info(f"Agentic repair generated for {object_name} (attempt {attempt_num})")
+                    logger.info(f"Agentic repair generated for {object_name} (attempt {attempt_num})")
 
-                return {
-                    "status": "success",
-                    "fixed_sql": fixed_sql,
-                    "attempt_num": attempt_num,
-                    "root_cause": root_cause['diagnosis'],
-                    "confidence": root_cause['confidence'],
-                    "analysis": analysis_result,
-                    "method": "agentic_root_cause_analysis"
-                }
-            else:
-                logger.warning(f"Root Cause Analyzer failed, falling back to standard repair")
-                # Fall back to standard repair if analyzer fails
-                return self._fallback_repair(
-                    sql_code=sql_code,
-                    error_message=error_message,
-                    object_name=object_name,
-                    object_type=object_type,
-                    error_history=error_history,
-                    oracle_code=oracle_code,
-                    cost_tracker=cost_tracker,
-                    attempt_num=attempt_num
-                )
+                    return {
+                        "status": "success",
+                        "fixed_sql": fixed_sql,
+                        "attempt_num": attempt_num,
+                        "root_cause": root_cause['diagnosis'],
+                        "confidence": root_cause['confidence'],
+                        "analysis": analysis_result,
+                        "method": "agentic_root_cause_analysis"
+                    }
+            
+            # Fallback if status not success OR fixed_sql missing
+            logger.warning(f"Root Cause Analyzer failed or returned no fix, falling back to standard repair")
+            # Fall back to standard repair if analyzer fails
+            return self._fallback_repair(
+                sql_code=sql_code,
+                error_message=error_message,
+                object_name=object_name,
+                object_type=object_type,
+                error_history=error_history,
+                oracle_code=oracle_code,
+                cost_tracker=cost_tracker,
+                attempt_num=attempt_num
+            )
 
         except ImportError:
             logger.warning("Root Cause Analyzer not available, using standard repair")
@@ -417,6 +450,8 @@ FAILED SQL CODE:
 - Ensure RETURNS clause before AS
 - Use proper return syntax: RETURN value
 - Check if function should be inline table-valued
+- DO NOT use THROW or RAISEERROR inside functions (side-effects not allowed)
+- Use RETURN NULL or specific error value instead of raising exceptions
 """
         elif object_type == "TRIGGER":
             prompt += """- Use CREATE TRIGGER not CREATE OR REPLACE
@@ -430,7 +465,7 @@ CRITICAL INSTRUCTIONS:
 2. Apply solutions from web search and memory if relevant
 3. Fix ONLY the specific error - don't rewrite everything
 4. Return ONLY the fixed SQL code, no explanations
-5. Start with CREATE or ALTER, no markdown fences
+5. Start with CREATE or ALTER, DO NOT use markdown fences (```sql)
 6. Ensure SQL Server 2022 compatibility
 7. Test logic before suggesting
 
@@ -441,27 +476,36 @@ OUTPUT: Return ONLY executable SQL code, nothing else."""
     def _extract_sql(self, response_text: str, object_type: str) -> str:
         """Extract SQL code from response"""
         
-        # Remove markdown fences if present
         text = response_text.strip()
         
+        # Aggressive markdown stripping
+        # Handle ```sql ... ```
         if "```sql" in text:
             text = text.split("```sql")[1]
             if "```" in text:
                 text = text.split("```")[0]
+        # Handle ``` ... ``` (no language)
         elif "```" in text:
             parts = text.split("```")
-            if len(parts) >= 2:
-                text = parts[1]
+            # Find the part that looks like SQL
+            for part in parts:
+                clean_part = part.strip().upper()
+                if clean_part.startswith(("CREATE", "ALTER", "INSERT", "UPDATE", "DELETE", "DROP")):
+                    text = part
+                    break
         
         text = text.strip()
         
+        # Remove any leading backticks that might have survived
+        text = text.replace("`", "")
+        
         # Ensure it starts with CREATE or ALTER
-        if not text.upper().startswith(("CREATE", "ALTER", "INSERT", "UPDATE", "DELETE")):
+        if not text.upper().startswith(("CREATE", "ALTER", "INSERT", "UPDATE", "DELETE", "DROP")):
             logger.warning(f"Response doesn't start with SQL keyword, attempting to extract")
             # Try to find SQL code
             lines = text.split('\n')
             for i, line in enumerate(lines):
-                if line.strip().upper().startswith(("CREATE", "ALTER")):
+                if line.strip().upper().startswith(("CREATE", "ALTER", "INSERT", "UPDATE", "DELETE", "DROP")):
                     text = '\n'.join(lines[i:])
                     break
         

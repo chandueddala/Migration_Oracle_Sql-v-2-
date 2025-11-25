@@ -21,7 +21,7 @@ except ImportError:
     TavilyClient = None
     TAVILY_AVAILABLE = False
 
-from config import TAVILY_API_KEY, MAX_SEARCH_RESULTS, ENABLE_WEB_SEARCH
+from config.config_enhanced import TAVILY_API_KEY, MAX_SEARCH_RESULTS, ENABLE_WEB_SEARCH
 
 logger = logging.getLogger(__name__)
 

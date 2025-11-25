@@ -82,6 +82,9 @@ class SQLServerConnector:
             return results
         except Exception as e:
             logger.error(f"Query execution failed: {e}")
+            logger.error(f"Failed Query: {query}")
+            if params:
+                logger.error(f"Parameters: {params}")
             raise
     
     def execute_ddl(self, ddl: str) -> Dict[str, Any]:
