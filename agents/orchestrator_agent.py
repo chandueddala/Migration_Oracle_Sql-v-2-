@@ -24,13 +24,33 @@ from agents.memory_agent import MemoryAgent
 
 logger = logging.getLogger(__name__)
 
-# Use enhanced dynamic decomposer that works with any Oracle package structure
+# Use LLM-POWERED decomposer - truly dynamic, works with ANY package structure
 try:
-    from utils.package_decomposer_enhanced import decompose_oracle_package
-    logger.info("✅ Using enhanced dynamic package decomposer")
+    from utils.package_decomposer_llm import decompose_oracle_package
+    logger.info("✅ Using LLM-POWERED decomposer (Claude analyzes package structure dynamically)")
 except ImportError:
-    from utils.package_decomposer import decompose_oracle_package
-    logger.info("⚠️ Using basic package decomposer")
+    try:
+        from utils.package_decomposer_multi import decompose_oracle_package
+        logger.info("⚠️ Using MULTI-PACKAGE UNIVERSAL decomposer (unlimited packages, any database)")
+    except ImportError:
+        try:
+            from utils.package_decomposer_universal import decompose_oracle_package
+            logger.info("⚠️ Using UNIVERSAL adaptive package decomposer (multi-database, fault-tolerant)")
+        except ImportError:
+            try:
+                from utils.package_decomposer_dynamic import decompose_oracle_package
+                logger.info("⚠️ Using DYNAMIC adaptive package decomposer (multi-database support)")
+            except ImportError:
+                try:
+                    from utils.package_decomposer_fixed import decompose_oracle_package
+                    logger.info("⚠️ Using FIXED robust package decomposer")
+                except ImportError:
+                    try:
+                        from utils.package_decomposer_enhanced import decompose_oracle_package
+                        logger.info("⚠️ Using enhanced dynamic package decomposer")
+                    except ImportError:
+                        from utils.package_decomposer import decompose_oracle_package
+                        logger.info("⚠️ Using basic package decomposer")
 
 
 class MigrationOrchestrator:
