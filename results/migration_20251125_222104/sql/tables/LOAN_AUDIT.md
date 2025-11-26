@@ -1,0 +1,17 @@
+# SQL Server TABLE: LOAN_AUDIT
+
+**Source**: SQL Server (Converted)  
+**Captured**: 2025-11-25 22:21:42  
+
+## Source Code
+
+```sql
+CREATE TABLE [APP].[LOAN_AUDIT] (
+    [AUDIT_ID] DECIMAL(38,0) NOT NULL,
+    [STG_ID] DECIMAL(38,0),
+    [STATUS] NVARCHAR(30),
+    [MESSAGE] NVARCHAR(4000),
+    [PROCESSED_ON] DATETIME2(6),
+    CONSTRAINT [PK_LOAN_AUDIT] PRIMARY KEY ([AUDIT_ID])
+);
+```

@@ -410,18 +410,215 @@ def handle_identity_columns(table_name: str, columns: List[str],
 
 class MemoryAgent:
     """Agent wrapper for SharedMemory to provide agent-like interface"""
+    def store_failed_pattern(self, pattern: Dict):
+        """Store a failed pattern to avoid"""
+        pattern_entry = {
+            **pattern,
+            "timestamp": datetime.now().isoformat(),
+            "success": False
+        }
+        
+        self.failed_patterns.append(pattern_entry)
+        logger.info(f"Stored failed pattern: {pattern.get('name', 'unnamed')}")
+        self.save()
+    
+    def get_similar_patterns(self, object_type: str, limit: int = 5) -> List[Dict]:
+        """Get similar successful patterns"""
+        relevant = [p for p in self.successful_patterns 
+                   if p.get("object_type") == object_type]
+        return relevant[-limit:]  # Return most recent
+    
+    # ==================== TABLE MAPPING ====================
+    
+    def store_table_mapping(self, oracle_table: str, sqlserver_table: str, 
+                           schema: str = "dbo"):
+        """Store Oracle â†’ SQL Server table mapping"""
+        self.table_mappings[oracle_table] = {
+            "sqlserver_table": sqlserver_table,
+            "schema": schema,
+            "mapped_at": datetime.now().isoformat()
+        }
+        logger.info(f"Stored table mapping: {oracle_table} â†’ {schema}.{sqlserver_table}")
+        self.save()
+    
+    def get_table_mapping(self, oracle_table: str) -> Optional[Dict]:
+        """Get SQL Server table mapping for Oracle table"""
+        return self.table_mappings.get(oracle_table)
+    
+    # ==================== PERSISTENCE ====================
+    
+    def save(self):
+        """Save shared memory to disk"""
+        try:
+            self.persistence_file.parent.mkdir(exist_ok=True)
+            
+            data = {
+                "schemas": self.schemas,
+                "identity_columns": self.identity_columns,
+                "error_solutions": dict(self.error_solutions),
+                "successful_patterns": self.successful_patterns,
+                "failed_patterns": self.failed_patterns,
+                "table_mappings": self.table_mappings,
+                "last_updated": datetime.now().isoformat()
+            }
+            
+            with open(self.persistence_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            
+            logger.debug(f"Saved shared memory to {self.persistence_file}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save shared memory: {e}")
+    
+    def load(self):
+        """Load shared memory from disk"""
+        try:
+            if self.persistence_file.exists():
+                with open(self.persistence_file, 'r') as f:
+                    data = json.load(f)
+                
+                self.schemas = data.get("schemas", {})
+                self.identity_columns = data.get("identity_columns", {})
+                self.error_solutions = defaultdict(list, data.get("error_solutions", {}))
+                self.successful_patterns = data.get("successful_patterns", [])
+                self.failed_patterns = data.get("failed_patterns", [])
+                self.table_mappings = data.get("table_mappings", {})
+                
+                logger.info(f"Loaded shared memory from {self.persistence_file}")
+                logger.info(f"  - Schemas: {len(self.schemas)}")
+                logger.info(f"  - Identity columns: {len(self.identity_columns)}")
+                logger.info(f"  - Error solutions: {len(self.error_solutions)}")
+                logger.info(f"  - Successful patterns: {len(self.successful_patterns)}")
+            else:
+                logger.info("No existing shared memory found, starting fresh")
+                
+        except Exception as e:
+            logger.error(f"Failed to load shared memory: {e}")
+    
+    def clear(self):
+        """Clear all shared memory (use with caution)"""
+        self.schemas = {}
+        self.identity_columns = {}
+        self.error_solutions = defaultdict(list)
+        self.successful_patterns = []
+        self.failed_patterns = []
+        self.table_mappings = {}
+        self.save()
+        logger.warning("Shared memory cleared")
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get statistics about shared memory"""
+        return {
+            "schemas_tracked": len(self.schemas),
+            "tables_with_identity": len(self.identity_columns),
+            "error_solutions": len(self.error_solutions),
+            "successful_patterns": len(self.successful_patterns),
+            "failed_patterns": len(self.failed_patterns),
+            "table_mappings": len(self.table_mappings),
+            "total_identity_columns": sum(len(cols) for cols in self.identity_columns.values())
+        }
+    
+    def get_summary(self) -> str:
+        """Get human-readable summary"""
+        stats = self.get_statistics()
+        
+        lines = [
+            "\nðŸ§  SHARED MEMORY SUMMARY",
+            "="*50,
+            f"ðŸ“Š Schemas tracked: {stats['schemas_tracked']}",
+            f"ðŸ”‘ Tables with identity columns: {stats['tables_with_identity']}",
+            f"ðŸ’¡ Error solutions stored: {stats['error_solutions']}",
+            f"âœ… Successful patterns: {stats['successful_patterns']}",
+            f"âŒ Failed patterns: {stats['failed_patterns']}",
+            f"ðŸ—ºï¸  Table mappings: {stats['table_mappings']}",
+            "="*50
+        ]
+        
+        return "\n".join(lines)
+
+
+# Global shared memory instance
+_shared_memory = None
+
+
+def get_shared_memory() -> SharedMemory:
+    """Get or create the global shared memory instance"""
+    global _shared_memory
+    if _shared_memory is None:
+        _shared_memory = SharedMemory()
+    return _shared_memory
+
+
+# ==================== HELPER FUNCTIONS ====================
+
+def ensure_schema_exists(schema_name: str, sqlserver_creds: Dict) -> bool:
+    """
+    Ensure schema exists in SQL Server
+    Uses shared memory to avoid repeated checks
+    """
+    memory = get_shared_memory()
+    return memory.create_schema_if_needed("sqlserver", schema_name, sqlserver_creds)
+
+
+def fix_schema_references(sql_code: str, target_schema: str = "dbo") -> str:
+    """
+    Fix schema references in SQL code
+    Replace APP.table_name with dbo.table_name or [schema].table_name
+    """
+    import re
+    
+    # Pattern to match schema.table references
+    pattern = r'\b([A-Z_]+)\.([A-Z_]+)\b'
+    
+    def replace_schema(match):
+        schema = match.group(1)
+        table = match.group(2)
+        
+        # If it's a known Oracle schema, replace with target schema
+        if schema in ['APP', 'HR', 'SCOTT', 'SYSTEM']:
+            return f"[{target_schema}].[{table}]"
+        
+        return match.group(0)
+    
+    fixed_code = re.sub(pattern, replace_schema, sql_code, flags=re.IGNORECASE)
+    return fixed_code
+
+
+def handle_identity_columns(table_name: str, columns: List[str],
+                           insert_sql: str) -> str:
+    """
+    Automatically handle identity column inserts
+    Wraps INSERT with IDENTITY_INSERT ON/OFF
+    """
+    memory = get_shared_memory()
+
+    # Register identity columns if not already done
+    for col in columns:
+        if 'ID' in col.upper() or col.upper().endswith('_ID'):
+            memory.register_identity_column(table_name, col)
+
+    # Wrap INSERT if needed
+    return memory.get_identity_insert_wrapper(table_name, insert_sql)
+
+
+# ==================== MEMORY AGENT WRAPPER ====================
+
+class MemoryAgent:
+    """Agent wrapper for SharedMemory to provide agent-like interface"""
 
     def __init__(self, memory, cost_tracker):
         self.memory = memory
         self.cost_tracker = cost_tracker
 
     def store_successful_conversion(self, object_name: str, object_type: str,
-                                    oracle_code: str, tsql_code: str):
+                                    oracle_code: str, tsql_code: str,
+                                    review_quality: str = None):
         """Store successful conversion pattern"""
         pattern = {
             "name": object_name,
             "object_type": object_type,
             "oracle_snippet": oracle_code[:300],
-            "tsql_snippet": tsql_code[:300]
+            "tsql_snippet": tsql_code[:300],
+            "review_quality": review_quality  # Store quality if provided
         }
         self.memory.store_successful_pattern(pattern)

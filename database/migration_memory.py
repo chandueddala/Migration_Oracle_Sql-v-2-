@@ -213,6 +213,40 @@ class MigrationMemory:
             "error_solutions": sum(len(v) for v in self._error_solutions.values()),
         }
 
+    def record_error_solution(self, error_code: str, solution: Dict):
+        """
+        Record a successful error solution for future reference
+
+        Args:
+            error_code: The error code or message that was resolved
+            solution: Dict containing:
+                - object_name: Name of the object
+                - object_type: Type (PROCEDURE, FUNCTION, etc.)
+                - error_message: Full error message
+                - oracle_code: Original Oracle code
+                - fixed_sql: Working SQL Server code
+                - fix_description: What was changed
+                - timestamp: When it was fixed
+        """
+        from datetime import datetime
+
+        if not error_code:
+            return
+
+        # Normalize error code for consistent lookups
+        normalized_key = error_code.strip().lower()
+
+        # Add to error solutions
+        self._error_solutions[normalized_key].append({
+            "object_name": solution.get("object_name", ""),
+            "object_type": solution.get("object_type", ""),
+            "error_message": solution.get("error_message", ""),
+            "oracle_code": solution.get("oracle_code", "")[:500],  # Limit size
+            "fixed_sql": solution.get("fixed_sql", "")[:500],  # Limit size
+            "fix_description": solution.get("fix_description", ""),
+            "timestamp": solution.get("timestamp", datetime.now().isoformat())
+        })
+
     def find_similar_error_solutions(self, error_code):
         """
         Find similar error solutions based on error code.

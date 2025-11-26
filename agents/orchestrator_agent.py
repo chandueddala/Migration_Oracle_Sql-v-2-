@@ -21,6 +21,7 @@ from agents.converter_agent import ConverterAgent
 from agents.reviewer_agent import ReviewerAgent
 from agents.debugger_agent import DebuggerAgent
 from agents.memory_agent import MemoryAgent
+from utils.migration_docs import get_documenter
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +78,17 @@ class MigrationOrchestrator:
         self.sqlserver_creds = sqlserver_creds
         self.cost_tracker = cost_tracker
         self.migration_options = migration_options or {}
-        
+
         # Initialize agents
         self.memory = MigrationMemory()
         self.converter = ConverterAgent(cost_tracker)
         self.reviewer = ReviewerAgent(cost_tracker)
         self.debugger = DebuggerAgent(cost_tracker, self.migration_options)
         self.memory_agent = MemoryAgent(self.memory, cost_tracker)
-        
+
+        # Initialize documentation system
+        self.documenter = get_documenter(enabled=True)
+
         # Initialize and connect to databases
         self.oracle_conn = OracleConnector(oracle_creds)
         self.sqlserver_conn = SQLServerConnector(sqlserver_creds)
@@ -145,7 +149,14 @@ class MigrationOrchestrator:
                 )
             
             logger.info(f"✅ Retrieved DDL for {table_name}: {len(oracle_ddl)} chars")
-            
+
+            # Save Oracle DDL to documentation
+            self.documenter.save_oracle_object(
+                object_name=table_name,
+                object_type="TABLE",
+                oracle_code=oracle_ddl
+            )
+
             # Step 2: Convert (SSMA or LLM)
             if self.ssma_available:
                 safe_print("    🔄 Step 2/5: Converting to SQL Server (using SSMA)...")
@@ -162,8 +173,15 @@ class MigrationOrchestrator:
                     table_name, "TABLE",
                     "Conversion failed"
                 )
-            
+
             logger.info(f"✅ Converted {table_name}: {len(tsql)} chars")
+
+            # Save SQL Server DDL to documentation
+            self.documenter.save_sqlserver_object(
+                object_name=table_name,
+                object_type="TABLE",
+                tsql_code=tsql
+            )
             
             # Apply schema fixes
             tsql = self._fix_schema_references(tsql)
@@ -246,6 +264,13 @@ class MigrationOrchestrator:
 
             logger.info(f"✅ Retrieved {obj_type} code for {obj_name}: {len(oracle_code)} chars")
 
+            # Save Oracle code to documentation
+            self.documenter.save_oracle_object(
+                object_name=obj_name,
+                object_type=obj_type,
+                oracle_code=oracle_code
+            )
+
             # Step 2: Convert (SSMA or LLM)
             if self.ssma_available:
                 safe_print("    🔄 Step 2/5: Converting to T-SQL (using SSMA)...")
@@ -257,14 +282,21 @@ class MigrationOrchestrator:
                     object_name=obj_name,
                     object_type=obj_type
                 )
-            
+
             if not tsql:
                 return self._failure_result(
                     obj_name, obj_type,
                     "Conversion failed"
                 )
-            
+
             logger.info(f"✅ Converted {obj_name}: {len(tsql)} chars")
+
+            # Save SQL Server code to documentation
+            self.documenter.save_sqlserver_object(
+                object_name=obj_name,
+                object_type=obj_type,
+                tsql_code=tsql
+            )
             
             # Apply schema fixes
             tsql = self._fix_schema_references(tsql)
@@ -512,6 +544,13 @@ class MigrationOrchestrator:
 
             logger.info(f"✅ Retrieved package code: {len(oracle_code)} chars")
 
+            # Save Oracle package code to documentation
+            self.documenter.save_oracle_object(
+                object_name=package_name,
+                object_type="PACKAGE",
+                oracle_code=oracle_code
+            )
+
             # Step 2: Decompose package into individual members
             safe_print("    🔧 Step 2/4: Decomposing package into procedures/functions...")
             decomposed = decompose_oracle_package(package_name, oracle_code)
@@ -542,6 +581,14 @@ class MigrationOrchestrator:
                 safe_print(f"\n       [{i}/{total_members}] Migrating: {member.name} ({member.member_type})")
                 safe_print(f"                          → SQL Server name: {sqlserver_name}")
 
+                # Save Oracle member code to documentation
+                self.documenter.save_oracle_object(
+                    object_name=f"{package_name}.{member.name}",
+                    object_type="PACKAGE",
+                    oracle_code=member.body,
+                    metadata={"package": package_name, "member": member.name, "member_type": member.member_type}
+                )
+
                 # Convert member code
                 if self.ssma_available:
                     tsql = self._convert_with_ssma(member.body, sqlserver_name, member.member_type)
@@ -562,6 +609,14 @@ class MigrationOrchestrator:
                         "message": "Conversion failed"
                     })
                     continue
+
+                # Save SQL Server code to documentation
+                self.documenter.save_sqlserver_object(
+                    object_name=sqlserver_name,
+                    object_type="PACKAGE",
+                    tsql_code=tsql,
+                    metadata={"original_package": package_name, "original_member": member.name, "member_type": member.member_type}
+                )
 
                 # Apply schema fixes
                 tsql = self._fix_schema_references(tsql)
