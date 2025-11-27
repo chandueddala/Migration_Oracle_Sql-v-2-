@@ -121,9 +121,23 @@ def migrate_table_data(
             raise Exception("Failed to connect to SQL Server database")
             
         memory = MigrationMemory()
-        
-        # Get identity columns (need special handling)
-        identity_cols = memory.get_identity_columns(table_name)
+
+        # Get identity columns directly from SQL Server metadata
+        identity_cols = []
+        try:
+            logger.info(f"Querying SQL Server for IDENTITY columns in {table_name}...")
+            table_info = sqlserver_conn.get_table_columns(table_name)
+            logger.info(f"Retrieved {len(table_info)} columns from SQL Server")
+
+            identity_cols = [col['name'] for col in table_info if col.get('is_identity')]
+
+            if identity_cols:
+                logger.info(f"✅ Detected IDENTITY columns for {table_name}: {identity_cols}")
+                print(f"       🔑 IDENTITY columns detected: {', '.join(identity_cols)}")
+            else:
+                logger.info(f"No IDENTITY columns detected for {table_name}")
+        except Exception as e:
+            logger.error(f"❌ Could not detect identity columns: {e}", exc_info=True)
         
         # Fetch data from Oracle
         print(f"       📥 Fetching data from Oracle...")
@@ -148,14 +162,12 @@ def migrate_table_data(
         
         # Insert data into SQL Server
         print(f"       📤 Inserting into SQL Server...")
-        
-        # Handle IDENTITY columns
         if identity_cols:
             print(f"       🔑 Handling IDENTITY columns: {', '.join(identity_cols)}")
         
         rows_inserted = sqlserver_conn.bulk_insert_data(
             table_name=table_name,
-            data=oracle_data,
+            rows=oracle_data,
             identity_columns=identity_cols
         )
         
@@ -181,7 +193,7 @@ def migrate_table_data(
                 "table_name": table_name
             }
     
-    except Exception as e:
+    except Exception as  e:
         error_msg = f"Data migration failed for {table_name}: {str(e)}"
         logger.error(error_msg, exc_info=True)
         print(f"       ❌ Error: {str(e)}")

@@ -79,11 +79,25 @@ class MigrationOrchestrator:
         self.cost_tracker = cost_tracker
         self.migration_options = migration_options or {}
 
-        # Initialize agents
+        # Initialize foreign key manager
+        from utils.foreign_key_manager import ForeignKeyManager
+        self.fk_manager = ForeignKeyManager()
+
+        # Initialize dependency manager
+        from utils.dependency_manager import DependencyManager
+        self.dep_manager = DependencyManager(max_retry_cycles=3)
+
+        # Initialize sequence analyzer
+        from utils.sequence_analyzer import SequenceAnalyzer
+        from utils.identity_converter import IdentityConverter
+        self.sequence_analyzer = SequenceAnalyzer(default_schema="dbo")
+        self.identity_converter = IdentityConverter()
+
+        # Initialize agents (pass FK manager to converter)
         self.memory = MigrationMemory()
-        self.converter = ConverterAgent(cost_tracker)
+        self.converter = ConverterAgent(cost_tracker, fk_manager=self.fk_manager)
         self.reviewer = ReviewerAgent(cost_tracker)
-        self.debugger = DebuggerAgent(cost_tracker, self.migration_options)
+        self.debugger = DebuggerAgent(cost_tracker, self.migration_options, self.memory)
         self.memory_agent = MemoryAgent(self.memory, cost_tracker)
 
         # Initialize documentation system
@@ -708,6 +722,393 @@ class MigrationOrchestrator:
             "timestamp": datetime.now().isoformat()
         }
     
+    def apply_all_foreign_keys(self) -> Dict[str, Any]:
+        """
+        Apply all stored foreign keys after tables are created
+
+        This method should be called AFTER all tables have been successfully
+        migrated. It applies foreign keys as ALTER TABLE statements.
+
+        Returns:
+            Result dictionary with statistics
+        """
+        logger.info("=" * 70)
+        logger.info("APPLYING FOREIGN KEY CONSTRAINTS")
+        logger.info("=" * 70)
+
+        safe_print("\n  🔗 Applying Foreign Key Constraints...")
+
+        # Get summary before applying
+        summary = self.fk_manager.get_summary()
+
+        if summary['total_foreign_keys'] == 0:
+            logger.info("No foreign keys to apply")
+            safe_print("    ℹ️  No foreign keys found")
+            return {
+                "status": "success",
+                "total": 0,
+                "applied": 0,
+                "failed": 0,
+                "errors": []
+            }
+
+        safe_print(f"    📊 Found {summary['total_foreign_keys']} foreign key(s) from {summary['total_tables_with_fks']} table(s)")
+
+        # Save FK script to results directory
+        try:
+            results_dir = self.documenter.results_dir if hasattr(self.documenter, 'results_dir') else "results"
+            script_path = self.fk_manager.save_foreign_key_scripts(results_dir)
+            safe_print(f"    💾 Saved FK script: {script_path}")
+        except Exception as e:
+            logger.warning(f"Could not save FK script: {e}")
+
+        # Apply foreign keys
+        result = self.fk_manager.apply_foreign_keys(self.sqlserver_conn, batch_size=10)
+
+        # Print summary
+        if result['status'] == 'success':
+            safe_print(f"    ✅ Successfully applied all {result['applied']} foreign key(s)")
+        else:
+            safe_print(f"    ⚠️  Applied {result['applied']} of {result['total']} foreign key(s)")
+            if result['failed'] > 0:
+                safe_print(f"    ❌ {result['failed']} foreign key(s) failed")
+
+        logger.info("=" * 70)
+
+        return result
+
+    def analyze_sequences_and_triggers(self) -> Dict[str, Any]:
+        """
+        Analyze all Oracle sequences and triggers to determine migration strategy
+
+        This method should be called BEFORE migrating tables/triggers to understand
+        which sequences should become IDENTITY columns vs SQL Server SEQUENCEs
+
+        Returns:
+            Analysis result with migration plan
+        """
+        logger.info("=" * 70)
+        logger.info("ANALYZING ORACLE SEQUENCES")
+        logger.info("=" * 70)
+
+        safe_print("\n  🔍 Analyzing Oracle Sequences and Usage Patterns...")
+
+        try:
+            # Step 1: Discover all sequences
+            sequences = self.oracle_conn.list_sequences()
+            safe_print(f"    📊 Found {len(sequences)} sequence(s)")
+
+            # Step 2: Register all sequences
+            for seq_name in sequences:
+                try:
+                    # Get sequence DDL to extract current value
+                    seq_ddl = self.oracle_conn.get_sequence_ddl(seq_name)
+                    # Parse START WITH value (simplified - could be enhanced)
+                    import re
+                    start_match = re.search(r'START WITH (\d+)', seq_ddl, re.IGNORECASE)
+                    current_value = int(start_match.group(1)) if start_match else None
+
+                    # Register in analyzer
+                    self.sequence_analyzer.register_sequence(seq_name, schema="dbo", current_value=current_value)
+
+                except Exception as e:
+                    logger.warning(f"Could not analyze sequence {seq_name}: {e}")
+
+            # Step 3: Analyze all triggers for sequence usage
+            triggers = self.oracle_conn.list_triggers()
+            safe_print(f"    🔍 Analyzing {len(triggers)} trigger(s) for sequence usage...")
+
+            for trigger_name in triggers:
+                try:
+                    trigger_ddl = self.oracle_conn.get_trigger_ddl(trigger_name)
+
+                    # Extract table name from trigger DDL
+                    table_match = re.search(r'ON\s+(\w+)', trigger_ddl, re.IGNORECASE)
+                    table_name = table_match.group(1) if table_match else "UNKNOWN"
+
+                    # Analyze trigger
+                    self.sequence_analyzer.analyze_trigger(
+                        trigger_name,
+                        trigger_ddl,
+                        table_name,
+                        schema="dbo"
+                    )
+
+                except Exception as e:
+                    logger.warning(f"Could not analyze trigger {trigger_name}: {e}")
+
+            # Step 4: Analyze procedures and functions
+            procedures = self.oracle_conn.list_procedures()
+            safe_print(f"    🔍 Analyzing {len(procedures)} procedure(s) for sequence usage...")
+
+            for proc_name in procedures:
+                try:
+                    proc_ddl = self.oracle_conn.get_procedure_ddl(proc_name)
+                    self.sequence_analyzer.analyze_procedure(proc_name, proc_ddl, schema="dbo")
+                except Exception as e:
+                    logger.warning(f"Could not analyze procedure {proc_name}: {e}")
+
+            functions = self.oracle_conn.list_functions()
+            safe_print(f"    🔍 Analyzing {len(functions)} function(s) for sequence usage...")
+
+            for func_name in functions:
+                try:
+                    func_ddl = self.oracle_conn.get_function_ddl(func_name)
+                    self.sequence_analyzer.analyze_function(func_name, func_ddl, schema="dbo")
+                except Exception as e:
+                    logger.warning(f"Could not analyze function {func_name}: {e}")
+
+            # Step 5: Generate migration plan
+            plan = self.sequence_analyzer.generate_migration_plan()
+            safe_print(f"\n    ✅ Sequence migration plan generated")
+
+            # Step 6: Generate and display report
+            report = self.sequence_analyzer.generate_migration_report()
+
+            # Save report to file
+            try:
+                results_dir = self.documenter.results_dir if hasattr(self.documenter, 'results_dir') else "results"
+                report_path = Path(results_dir) / "sequence_migration_plan.txt"
+                report_path.write_text(report, encoding='utf-8')
+                safe_print(f"    💾 Saved sequence migration plan: {report_path}")
+            except Exception as e:
+                logger.warning(f"Could not save sequence report: {e}")
+
+            # Step 7: Display summary
+            identity_count = sum(1 for p in plan.values() if p['strategy'] == 'identity_column')
+            sequence_count = sum(1 for p in plan.values() if p['strategy'] in ['sql_server_sequence', 'shared_sequence'])
+            review_count = sum(1 for p in plan.values() if p['strategy'] == 'manual_review')
+
+            safe_print(f"\n    📊 Migration Strategy Summary:")
+            safe_print(f"       • {identity_count} sequence(s) → IDENTITY column")
+            safe_print(f"       • {sequence_count} sequence(s) → SQL Server SEQUENCE")
+            safe_print(f"       • {review_count} sequence(s) → Manual review needed")
+
+            logger.info("=" * 70)
+
+            return {
+                "status": "success",
+                "total_sequences": len(sequences),
+                "plan": plan,
+                "report": report,
+                "identity_conversions": identity_count,
+                "sequence_migrations": sequence_count,
+                "manual_reviews": review_count
+            }
+
+        except Exception as e:
+            logger.error(f"Sequence analysis failed: {e}", exc_info=True)
+            safe_print(f"    ❌ Sequence analysis failed: {e}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def orchestrate_code_object_migration_with_dependencies(
+        self,
+        obj_name: str,
+        obj_type: str,
+        oracle_code: str = None
+    ) -> Dict[str, Any]:
+        """
+        Migrate code object with dependency tracking and retry logic
+
+        This method integrates with the dependency manager to handle
+        objects that may have missing dependencies.
+
+        Args:
+            obj_name: Object name
+            obj_type: Object type (PROCEDURE, FUNCTION, VIEW, TRIGGER)
+            oracle_code: Oracle code (if already fetched)
+
+        Returns:
+            Migration result dictionary
+        """
+        from utils.dependency_manager import ObjectType
+
+        # Map string types to enum
+        type_mapping = {
+            "PROCEDURE": ObjectType.PROCEDURE,
+            "FUNCTION": ObjectType.FUNCTION,
+            "VIEW": ObjectType.VIEW,
+            "TRIGGER": ObjectType.TRIGGER
+        }
+
+        dep_obj_type = type_mapping.get(obj_type, ObjectType.PROCEDURE)
+
+        # Use the standard migration method
+        result = self.orchestrate_code_object_migration(obj_name, obj_type)
+
+        # Track result in dependency manager
+        success = result.get("status") == "success"
+        error_msg = result.get("message", "") if not success else ""
+
+        self.dep_manager.handle_migration_result(obj_name, success, error_msg)
+
+        return result
+
+    def migrate_with_dependency_resolution(
+        self,
+        objects_by_type: Dict[str, List[str]]
+    ) -> Dict[str, Any]:
+        """
+        Migrate all code objects with automatic dependency resolution
+
+        Migration order: TABLES → VIEWS → FUNCTIONS → PROCEDURES → TRIGGERS
+        Implements retry cycles for objects with missing dependencies
+
+        Args:
+            objects_by_type: Dict with keys: tables, views, functions, procedures, triggers
+                            Values: List of object names
+
+        Returns:
+            Migration results with statistics
+        """
+        from utils.dependency_manager import ObjectType
+
+        logger.info("=" * 80)
+        logger.info("DEPENDENCY-AWARE CODE OBJECT MIGRATION")
+        logger.info("=" * 80)
+
+        results = {
+            "views": [],
+            "functions": [],
+            "procedures": [],
+            "triggers": [],
+            "dependency_stats": {},
+            "final_report": ""
+        }
+
+        # Phase 1: Add all objects to dependency manager and do initial conversions
+        safe_print("\n  📋 Phase 1: Preparing Objects...")
+
+        type_mapping = [
+            ("views", ObjectType.VIEW, "VIEW"),
+            ("functions", ObjectType.FUNCTION, "FUNCTION"),
+            ("procedures", ObjectType.PROCEDURE, "PROCEDURE"),
+            ("triggers", ObjectType.TRIGGER, "TRIGGER")
+        ]
+
+        for key, obj_type, obj_type_str in type_mapping:
+            for obj_name in objects_by_type.get(key, []):
+                try:
+                    # Fetch Oracle code
+                    oracle_code = self.oracle_conn.get_code_object(obj_name, obj_type_str)
+
+                    if oracle_code:
+                        # Convert to T-SQL
+                        tsql = self.converter.convert_code(oracle_code, obj_name, obj_type_str)
+
+                        # Add to dependency manager
+                        self.dep_manager.add_object(obj_name, obj_type, oracle_code, tsql)
+                    else:
+                        logger.warning(f"Could not fetch code for {obj_name}")
+
+                except Exception as e:
+                    logger.error(f"Error preparing {obj_name}: {e}")
+
+        # Phase 2: Initial migration attempt (in dependency order)
+        safe_print("\n  🚀 Phase 2: Initial Migration...")
+
+        migration_order = self.dep_manager.get_migration_order()
+
+        for obj in migration_order:
+            type_str = obj.object_type.name
+            result = self._migrate_single_object_with_tracking(obj)
+
+            # Store result
+            result_key = f"{type_str.lower()}s"
+            if result_key in results:
+                results[result_key].append(result)
+
+        # Phase 3: Retry cycles for skipped objects
+        while self.dep_manager.needs_retry_cycle():
+            self.dep_manager.start_retry_cycle()
+
+            safe_print(f"\n  🔄 Phase 3: Retry Cycle {self.dep_manager.current_cycle}...")
+
+            retry_candidates = self.dep_manager.get_retry_candidates()
+
+            if not retry_candidates:
+                logger.info("No objects ready to retry")
+                break
+
+            for obj in retry_candidates:
+                type_str = obj.object_type.name
+                result = self._migrate_single_object_with_tracking(obj)
+
+                # Store result
+                result_key = f"{type_str.lower()}s"
+                if result_key in results:
+                    results[result_key].append(result)
+
+        # Phase 4: Generate final report
+        safe_print("\n  📊 Phase 4: Generating Dependency Report...")
+
+        results["dependency_stats"] = self.dep_manager.get_statistics()
+        results["final_report"] = self.dep_manager.generate_dependency_report()
+
+        # Save report to file
+        try:
+            results_dir = self.documenter.results_dir if hasattr(self.documenter, 'results_dir') else "results"
+            report_path = f"{results_dir}/dependency_report.txt"
+            self.dep_manager.save_dependency_report(report_path)
+            safe_print(f"    💾 Report saved: {report_path}")
+        except Exception as e:
+            logger.warning(f"Could not save dependency report: {e}")
+
+        # Print summary
+        stats = results["dependency_stats"]
+        safe_print(f"\n  ✅ Migration Complete:")
+        safe_print(f"    Success:  {stats['success']}/{stats['total']}")
+        safe_print(f"    Failed:   {stats['failed']}/{stats['total']}")
+        safe_print(f"    Skipped:  {stats['skipped']}/{stats['total']}")
+
+        logger.info("=" * 80)
+
+        return results
+
+    def _migrate_single_object_with_tracking(self, obj) -> Dict[str, Any]:
+        """
+        Migrate a single object and track in dependency manager
+
+        Args:
+            obj: MigrationObject from dependency manager
+
+        Returns:
+            Migration result dict
+        """
+        type_str = obj.object_type.name
+
+        try:
+            # Deploy with repair
+            deploy_result = self.debugger.deploy_with_repair(
+                sql_code=obj.tsql_code,
+                object_name=obj.name,
+                object_type=type_str,
+                oracle_code=obj.oracle_code,
+                sqlserver_creds=self.sqlserver_creds
+            )
+
+            # Track result
+            success = deploy_result.get("status") == "success"
+            error_msg = deploy_result.get("message", "") if not success else ""
+
+            self.dep_manager.handle_migration_result(obj.name, success, error_msg)
+
+            return deploy_result
+
+        except Exception as e:
+            error_msg = str(e)
+            self.dep_manager.handle_migration_result(obj.name, False, error_msg)
+
+            return {
+                "status": "error",
+                "object_name": obj.name,
+                "object_type": type_str,
+                "message": error_msg
+            }
+
     def get_migration_status(self) -> Dict[str, Any]:
         """Get current migration status and statistics"""
         return {
@@ -721,5 +1122,6 @@ class MigrationOrchestrator:
                 "total_cost": self.cost_tracker.total_cost,
                 "total_tokens": self.cost_tracker.total_tokens_used,
             },
+            "foreign_keys": self.fk_manager.get_summary(),
             "timestamp": datetime.now().isoformat()
         }

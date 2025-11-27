@@ -1,0 +1,14 @@
+# SQL Server TABLE: DEPARTMENTS
+
+**Source**: SQL Server (Converted)  
+**Captured**: 2025-11-26 14:59:07  
+
+## Source Code
+
+```sql
+CREATE TABLE [APP].[DEPARTMENTS] (
+    [DEPT_ID] INT IDENTITY(1,1) NOT NULL,
+    [DEPT_NAME] NVARCHAR(60) NOT NULL,
+    CONSTRAINT [PK_DEPARTMENTS] PRIMARY KEY ([DEPT_ID])
+);
+```

@@ -30,9 +30,10 @@ claude_opus = ChatAnthropic(model=CLAUDE_OPUS_MODEL, temperature=0)
 class ConverterAgent:
     """Wrapper class for converter functions"""
 
-    def __init__(self, cost_tracker: CostTracker):
+    def __init__(self, cost_tracker: CostTracker, fk_manager=None):
         self.cost_tracker = cost_tracker
         self.llm = claude_sonnet
+        self.fk_manager = fk_manager
 
     def convert_code(self, oracle_code: str, object_name: str, object_type: str) -> str:
         """Convert Oracle code to SQL Server"""
@@ -40,7 +41,14 @@ class ConverterAgent:
 
     def convert_table_ddl(self, oracle_ddl: str, table_name: str) -> str:
         """Convert Oracle TABLE DDL to SQL Server"""
-        return convert_table_ddl(oracle_ddl, table_name, self.cost_tracker)
+        ddl = convert_table_ddl(oracle_ddl, table_name, self.cost_tracker)
+
+        # Strip foreign keys if FK manager is available
+        if self.fk_manager:
+            ddl = self.fk_manager.strip_foreign_keys_from_ddl(ddl, table_name)
+            logger.info(f"Foreign keys stripped from {table_name} and stored for later application")
+
+        return ddl
 
     def try_deploy_with_repair(self, sqlserver_creds: Dict, sql_code: str,
                                obj_name: str, obj_type: str,
@@ -96,9 +104,12 @@ Oracle DDL:
 
 Requirements:
 - Map Oracle data types to SQL Server (NUMBERâ†’DECIMAL, DATEâ†’DATETIME2, CLOBâ†’NVARCHAR(MAX))
-- Emit PRIMARY KEY, UNIQUE, CHECK, FOREIGN KEY constraints
+- Include PRIMARY KEY, UNIQUE, and CHECK constraints
+- INCLUDE FOREIGN KEY constraints in the output (they will be stripped later)
 - Remove Oracle-only clauses (tablespaces, storage)
 - Output ONLY the T-SQL (no explanation, no code fences)
+
+Note: Foreign keys will be extracted and applied later as ALTER TABLE statements.
 """
     
     response = claude_sonnet.invoke([HumanMessage(content=prompt)])

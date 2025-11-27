@@ -1,0 +1,16 @@
+# SQL Server TABLE: STORES
+
+**Source**: SQL Server (Converted)  
+**Captured**: 2025-11-27 01:52:21  
+
+## Source Code
+
+```sql
+CREATE TABLE [APP].[STORES] (
+    [STORE_ID] DECIMAL(38,0) IDENTITY(1,1) NOT NULL,
+    [STORE_NAME] NVARCHAR(80) NOT NULL,
+    [REGION_ID] DECIMAL(38,0) NOT NULL,
+    [OPEN_DATE] DATETIME2 NOT NULL,
+    CONSTRAINT [PK_STORES] PRIMARY KEY ([STORE_ID])
+);
+```

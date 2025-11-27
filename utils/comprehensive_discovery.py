@@ -345,9 +345,31 @@ class ComprehensiveDiscovery:
         return views
 
     def _discover_sequences(self) -> List[DatabaseObject]:
-        """Discover all sequences"""
+        """
+        Discover all user-created sequences
+        
+        Excludes internal Oracle identity sequences (ISEQ$$_%) as they are
+        automatically handled via IDENTITY columns in SQL Server.
+        """
         self.logger.info("  🔢 Discovering sequences...")
 
+        # First, check for internal sequences (for logging purposes)
+        internal_query = """
+        SELECT COUNT(*)
+        FROM user_sequences
+        WHERE sequence_name LIKE 'ISEQ$$_%'
+        """
+        
+        try:
+            internal_result = self.oracle_conn.execute_query(internal_query)
+            internal_count = internal_result[0][0] if internal_result else 0
+            if internal_count > 0:
+                self.logger.info(f"    ⏭️  Found {internal_count} internal Oracle identity sequence(s) - will be handled via IDENTITY columns")
+        except Exception as e:
+            self.logger.warning(f"    Could not count internal sequences: {e}")
+            internal_count = 0
+
+        # Query for user-created sequences only (exclude ISEQ$$_% internal sequences)
         query = """
         SELECT
             sequence_name,
@@ -356,6 +378,7 @@ class ComprehensiveDiscovery:
             increment_by,
             last_number
         FROM user_sequences
+        WHERE sequence_name NOT LIKE 'ISEQ$$_%'
         ORDER BY sequence_name
         """
 
@@ -375,7 +398,13 @@ class ComprehensiveDiscovery:
                     }
                 ))
 
-            self.logger.info(f"    ✅ Found {len(sequences)} sequences")
+            if sequences:
+                self.logger.info(f"    ✅ Found {len(sequences)} user-created sequence(s)")
+            elif internal_count > 0:
+                self.logger.info(f"    ✅ No user-created sequences found (only internal identity sequences)")
+            else:
+                self.logger.info(f"    ℹ️  No sequences found")
+                
         except Exception as e:
             self.logger.error(f"    ❌ Sequence discovery failed: {e}")
 

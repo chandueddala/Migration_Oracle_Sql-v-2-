@@ -54,539 +54,12 @@ if 'migration_options' not in st.session_state:
 if 'migration_results' not in st.session_state:
     st.session_state.migration_results = None
 
-# Premium CSS with CLEAN WHITE BACKGROUND & BLACK TEXT
+# Simple, clean CSS styling
 st.markdown("""
 <style>
-    /* ================================================================
-       GLOBAL STYLES - Clean White Background
-       ================================================================ */
     .stApp {
-        background-color: #ffffff;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        color: #000000;
-    }
-
-    .main .block-container {
-        padding: 2rem 3rem;
         max-width: 1400px;
-        background-color: #ffffff;
-    }
-
-    /* ================================================================
-       FORCE ALL TEXT TO BLACK - Clean Readable Interface
-       ================================================================ */
-    h1, h2, h3, h4, h5, h6 {
-        color: #000000 !important;
-        font-weight: 600;
-    }
-
-    p, span, div, label {
-        color: #000000 !important;
-    }
-
-    .stMarkdown, .stMarkdown p, .stMarkdown span {
-        color: #000000 !important;
-    }
-
-    /* Form labels - black */
-    .stTextInput label, .stNumberInput label, .stSelectbox label {
-        color: #000000 !important;
-        font-weight: 600 !important;
-    }
-
-    /* ================================================================
-       INPUT FIELDS - Keep white background with black text
-       ================================================================ */
-    .stTextInput input, 
-    .stNumberInput input, 
-    .stSelectbox select,
-    .stTextArea textarea,
-    input[type="text"],
-    input[type="number"],
-    input[type="password"],
-    select,
-    textarea {
-        color: #000000 !important;
-        background-color: #ffffff !important;
-        border: 1px solid #d1d5db !important;
-        font-weight: 500 !important;
-    }
-
-    input::placeholder,
-    textarea::placeholder {
-        color: #6b7280 !important;
-        font-weight: 400 !important;
-    }
-
-    /* ================================================================
-       CLEAN MINIMAL HEADER
-       ================================================================ */
-    .minimal-header {
-        text-align: center;
-        padding: 2rem 0;
-        margin-bottom: 2rem;
-        border-bottom: 2px solid #e5e7eb;
-    }
-
-    .minimal-header h1 {
-        font-size: 2rem;
-        color: #1f2937;
-        margin-bottom: 0.5rem;
-    }
-
-    .minimal-header p {
-        color: #6b7280;
-        font-size: 0.95rem;
-    }
-
-    /* ================================================================
-       BUTTONS - Clean Professional Style
-       ================================================================ */
-    .stButton button {
-        background-color: #3b82f6;
-        color: white;
-        border: none;
-        box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
-        border-color: rgba(99, 102, 241, 0.4);
-    }
-
-    .metric-label {
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--text-muted);
-        margin-bottom: 0.5rem;
-    }
-
-    .metric-value {
-        font-size: 2.5rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, var(--primary-light), var(--secondary));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        margin-bottom: 0.5rem;
-    }
-
-    .metric-delta {
-        font-size: 0.875rem;
-        color: var(--success);
-        font-weight: 600;
-    }
-
-    /* Migration Progress Styles */
-    .migration-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 15px;
-        color: white;
-        margin: 1rem 0;
-    }
-
-    .agent-card {
-        background: white;
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        border-left: 4px solid #1f77b4;
-        animation: slideIn 0.3s ease-out;
-    }
-
-    @keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: translateX(-20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
-    }
-
-    .agent-active {
-        border-left: 4px solid #28a745;
-        background: #f0fff4;
-    }
-
-    .agent-success {
-        border-left: 4px solid #28a745;
-        background: #d4edda;
-    }
-
-    .agent-error {
-        border-left: 4px solid #dc3545;
-        background: #f8d7da;
-    }
-
-    .pulse {
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0% {
-            opacity: 1;
-        }
-        50% {
-            opacity: 0.5;
-        }
-        100% {
-            opacity: 1;
-        }
-    }
-
-    .progress-indicator {
-        height: 6px;
-        background: #e0e0e0;
-        border-radius: 3px;
-        overflow: hidden;
-        margin: 1rem 0;
-    }
-
-    .progress-bar {
-        height: 100%;
-        background: linear-gradient(90deg, #1f77b4, #28a745);
-        animation: progressAnimation 1s ease-in-out;
-    }
-
-    @keyframes progressAnimation {
-        from {
-            width: 0%;
-        }
-    }
-
-    .status-badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 12px;
-        font-size: 0.875rem;
-        font-weight: 600;
-    }
-
-    .badge-processing {
-        background: #fff3cd;
-        color: #856404;
-    }
-
-    .badge-success {
-        background: #d4edda;
-        color: #155724;
-    }
-
-    .badge-error {
-        background: #f8d7da;
-        color: #721c24;
-    }
-
-    .log-entry {
-        font-family: 'Courier New', monospace;
-        font-size: 0.9rem;
-        padding: 0.5rem;
-        margin: 0.25rem 0;
-        background: #f8f9fa;
-        border-radius: 4px;
-        border-left: 3px solid #6c757d;
-    }
-
-    .log-success {
-        border-left-color: #28a745;
-        background: #f0fff4;
-    }
-
-    .log-error {
-        border-left-color: #dc3545;
-        background: #fff5f5;
-    }
-
-    .log-warning {
-        border-left-color: #ffc107;
-        background: #fffef0;
-    }
-
-    .log-info {
-        border-left-color: #17a2b8;
-        background: #f0f9ff;
-    }
-
-    .spinner {
-        display: inline-block;
-        width: 1rem;
-        height: 1rem;
-        border: 2px solid #f3f3f3;
-        border-top: 2px solid #1f77b4;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-right: 0.5rem;
-    }
-
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-
-    .stats-dashboard {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        margin: 1rem 0;
-    }
-
-    /* ========================================
-       ADVANCED PROFESSIONAL ANIMATIONS
-       ======================================== */
-
-    @keyframes glow {
-        0%, 100% { box-shadow: 0 0 5px rgba(31, 119, 180, 0.5); }
-        50% { box-shadow: 0 0 20px rgba(31, 119, 180, 0.8), 0 0 30px rgba(31, 119, 180, 0.6); }
-    }
-
-    @keyframes shimmer {
-        0% { background-position: -1000px 0; }
-        100% { background-position: 1000px 0; }
-    }
-
-    @keyframes float {
-        0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-10px); }
-    }
-
-    @keyframes wave {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(100%); }
-    }
-
-    @keyframes bounce {
-        0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
-        40% { transform: translateY(-20px); }
-        60% { transform: translateY(-10px); }
-    }
-
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(30px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes scaleUp {
-        from { transform: scale(0.8); opacity: 0; }
-        to { transform: scale(1); opacity: 1; }
-    }
-
-    @keyframes gradientShift {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
-
-    @keyframes flowRight {
-        0% { background-position: 0% 0%; }
-        100% { background-position: 200% 0%; }
-    }
-
-    @keyframes particleFloat {
-        0% { transform: translateY(0) translateX(0); opacity: 0; }
-        10% { opacity: 1; }
-        90% { opacity: 1; }
-        100% { transform: translateY(-1000px) translateX(100px); opacity: 0; }
-    }
-
-    @keyframes confettiFall {
-        to { transform: translateY(100vh) rotate(720deg); opacity: 0; }
-    }
-
-    @keyframes rippleEffect {
-        to { width: 300px; height: 300px; opacity: 0; }
-    }
-
-    @keyframes moveBackground {
-        0% { transform: translate(0, 0); }
-        100% { transform: translate(50px, 50px); }
-    }
-
-    /* Hero Banner with animated background */
-    .hero-banner {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 3rem 2rem;
-        border-radius: 20px;
-        color: white;
-        text-align: center;
-        box-shadow: 0 10px 40px rgba(102, 126, 234, 0.4);
-        margin: 2rem 0;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .hero-banner::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        left: -50%;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
-        background-size: 50px 50px;
-        animation: moveBackground 20s linear infinite;
-    }
-
-    /* Professional metric cards */
-    .metric-card-pro {
-        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-        padding: 1.5rem;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-        border: 1px solid rgba(0,0,0,0.05);
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .metric-card-pro:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-    }
-
-    .metric-card-pro::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 4px;
-        background: linear-gradient(90deg, #667eea, #764ba2);
-    }
-
-    /* Agent workflow visualization */
-    .agent-workflow {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: white;
-        padding: 1.5rem;
-        border-radius: 15px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        margin: 1rem 0;
-    }
-
-    .agent-node {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 50%;
-        width: 80px;
-        height: 80px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 2rem;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-        position: relative;
-        z-index: 2;
-    }
-
-    .agent-node.active {
-        animation: pulse 2s infinite, glow 2s ease-in-out infinite;
-    }
-
-    .agent-connector {
-        flex: 1;
-        height: 4px;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-        position: relative;
-        margin: 0 -10px;
-        z-index: 1;
-    }
-
-    .agent-connector.animated {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-        background-size: 200% 100%;
-        animation: flowRight 2s linear infinite;
-    }
-
-    /* Timeline for logs */
-    .timeline {
-        position: relative;
-        padding-left: 2rem;
-    }
-
-    .timeline::before {
-        content: '';
-        position: absolute;
-        left: 10px;
-        top: 0;
-        bottom: 0;
-        width: 3px;
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-    }
-
-    .timeline-item {
-        position: relative;
-        padding: 0.75rem 0 0.75rem 1.5rem;
-        animation: fadeInUp 0.3s ease-out;
-    }
-
-    .timeline-item::before {
-        content: '';
-        position: absolute;
-        left: -1.4rem;
-        top: 1rem;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: white;
-        border: 3px solid #667eea;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
-    }
-
-    .timeline-item.success::before {
-        border-color: #38ef7d;
-        box-shadow: 0 0 0 4px rgba(56, 239, 125, 0.2);
-    }
-
-    .timeline-item.error::before {
-        border-color: #f45c43;
-        box-shadow: 0 0 0 4px rgba(244, 92, 67, 0.2);
-    }
-
-    /* Progress bar with wave effect */
-    .progress-bar-container {
-        position: relative;
-        height: 30px;
-        background: #e0e0e0;
-        border-radius: 15px;
-        overflow: hidden;
-        box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-    }
-
-    .progress-bar-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-        border-radius: 15px;
-        position: relative;
-        transition: width 0.5s ease;
-        box-shadow: 0 2px 10px rgba(102, 126, 234, 0.5);
-    }
-
-    .progress-bar-fill::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-        animation: wave 2s infinite;
-    }
-
-    .progress-percentage {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-weight: bold;
-        color: #333;
-        font-size: 0.875rem;
-        z-index: 10;
+        margin: 0 auto;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -594,46 +67,29 @@ st.markdown("""
 
 def render_header():
     """Render clean minimal application header"""
-    st.markdown('''
-    <div class="minimal-header">
-        <h1>Oracle → SQL Server Migration</h1>
-        <p>Professional Database Migration Tool</p>
-    </div>
-    ''', unsafe_allow_html=True)
+    st.title("Oracle → SQL Server Migration")
+    st.caption("Professional Database Migration Tool")
 
-    # Clean Step Progress 
-    st.markdown("#### Migration Progress")
-    
-    progress_steps = [
-        ("1", "Credentials"),
-        ("2", "Discovery"),
-        ("3", "Selection"),
-        ("4", "Options"),
-        ("5", "Migration"),
-        ("6", "Results")
-    ]
-    
+    # Simple progress indicator
+    progress_steps = ["Credentials", "Discovery", "Selection", "Options", "Migration", "Results"]
+
     cols = st.columns(len(progress_steps))
-    
-    for idx, (col, (num, name)) in enumerate(zip(cols, progress_steps), 1):
+    for idx, (col, name) in enumerate(zip(cols, progress_steps), 1):
         with col:
             if idx < st.session_state.step:
-                # Completed
-                st.markdown(f"**✓ {name}**")
+                st.success(f"✓ {name}")
             elif idx == st.session_state.step:
-                # Active
-                st.markdown(f"**➤ {name}**")
+                st.info(f"➤ {name}")
             else:
-                # Upcoming
-                st.markdown(f"{num}. {name}")
-    
-    st.markdown("---")
+                st.write(f"{idx}. {name}")
+
+    st.divider()
 
 
 def step1_credentials():
     """Step 1: Collect database credentials"""
-    st.markdown('<div class="step-header">Step 1: Database Credentials</div>', unsafe_allow_html=True)
-    st.markdown('<div class="info-box">Please provide connection details for both Oracle and SQL Server databases.</div>', unsafe_allow_html=True)
+    st.header("Step 1: Database Credentials")
+    st.info("Please provide connection details for both Oracle and SQL Server databases.")
 
     # Oracle Credentials
     st.subheader("🔵 Oracle Database")
@@ -660,54 +116,65 @@ def step1_credentials():
         sqlserver_username = st.text_input("Username", value="sa", key="sqlserver_username")
         sqlserver_password = st.text_input("Password", type="password", key="sqlserver_password")
 
-    # Test Connection & Proceed
+    # Navigation buttons
+    st.markdown("---")
+    
+    # Test Connection button (always visible)
     col_test, col_next = st.columns([1, 1])
-
+    
     with col_test:
-        if st.button("🔍 Test Connections", type="secondary"):
+        if st.button("🔌 Test Connection", type="secondary"):
             if not all([oracle_username, oracle_password, sqlserver_username, sqlserver_password]):
                 st.error("❌ Please fill in all required fields")
             else:
                 with st.spinner("Testing connections..."):
-                    success, message = test_connections(
+                    is_valid, message = test_connections(
                         oracle_host, oracle_port, oracle_service, oracle_username, oracle_password,
                         sqlserver_host, sqlserver_database, sqlserver_username, sqlserver_password
                     )
-
-                    if success:
+                    
+                    if is_valid:
                         st.success(f"✅ {message}")
+                        # Save credentials and mark as validated
+                        st.session_state.oracle_creds = {
+                            "host": oracle_host,
+                            "port": oracle_port,
+                            "service_name": oracle_service,
+                            "username": oracle_username,
+                            "password": oracle_password
+                        }
+                        st.session_state.sqlserver_creds = {
+                            "server": sqlserver_host,
+                            "database": sqlserver_database,
+                            "username": sqlserver_username,
+                            "password": sqlserver_password
+                        }
+                        st.session_state.credentials_validated = True
+                        st.rerun()
                     else:
                         st.error(f"❌ {message}")
+                        st.session_state.credentials_validated = False
 
+    
+    # Next button (only visible after successful validation)
     with col_next:
-        if st.button("➡️ Next: Discovery", type="primary"):
-            if not all([oracle_username, oracle_password, sqlserver_username, sqlserver_password]):
-                st.error("❌ Please fill in all required fields")
-            else:
-                # Save credentials
-                st.session_state.oracle_creds = {
-                    "host": oracle_host,
-                    "port": oracle_port,
-                    "service_name": oracle_service,
-                    "username": oracle_username,
-                    "password": oracle_password
-                }
-                st.session_state.sqlserver_creds = {
-                    "server": sqlserver_host,
-                    "database": sqlserver_database,
-                    "username": sqlserver_username,
-                    "password": sqlserver_password
-                }
+        # Check if credentials have been validated
+        if st.session_state.get('credentials_validated', False):
+            if st.button("➡️ Next: Discovery", type="primary"):
                 st.session_state.step = 2
                 st.rerun()
+        else:
+            # Show disabled-looking button with message
+            st.button("➡️ Next: Discovery", type="primary", disabled=True)
+            st.caption("⚠️ Please test connection first")
 
 
 def step2_discovery():
     """Step 2: Discover all database objects"""
-    st.markdown('<div class="step-header">Step 2: Database Discovery</div>', unsafe_allow_html=True)
+    st.header("Step 2: Database Discovery")
 
     if st.session_state.discovery_result is None:
-        st.markdown('<div class="info-box">Discovering all database objects from Oracle. This may take a few moments...</div>', unsafe_allow_html=True)
+        st.info("Discovering all database objects from Oracle. This may take a few moments...")
 
         if st.button("🔍 Start Discovery", type="primary"):
             with st.spinner("Discovering database objects..."):
@@ -761,7 +228,7 @@ def step2_discovery():
         # Display discovery results
         result = st.session_state.discovery_result
 
-        st.markdown('<div class="success-box">✅ Discovery completed successfully!</div>', unsafe_allow_html=True)
+        st.success("✅ Discovery completed successfully!")
 
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -807,9 +274,8 @@ def step2_discovery():
 
 def step3_selection():
     """Step 3: Select objects to migrate"""
-    st.markdown('<div class="step-header">Step 3: Select Objects to Migrate</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="info-box">Select all objects you want to migrate. You can review and modify your selections before proceeding.</div>', unsafe_allow_html=True)
+    st.header("Step 3: Select Objects to Migrate")
+    st.info("Select all objects you want to migrate. You can review and modify your selections before proceeding.")
 
     result = st.session_state.discovery_result
 
@@ -1082,9 +548,9 @@ def step3_selection():
 
     # Total count with color indicator
     if selected_count == 0:
-        st.markdown('<div class="warning-box"><strong>⚠️ TOTAL OBJECTS TO MIGRATE: 0</strong><br/>Please select at least one object before proceeding!</div>', unsafe_allow_html=True)
+        st.warning(f"⚠️ **TOTAL OBJECTS TO MIGRATE: 0** - Please select at least one object before proceeding!")
     else:
-        st.markdown(f'<div class="success-box"><strong>✅ TOTAL OBJECTS TO MIGRATE: {selected_count}</strong></div>', unsafe_allow_html=True)
+        st.success(f"✅ **TOTAL OBJECTS TO MIGRATE: {selected_count}**")
 
     # Navigation
     st.markdown("---")
@@ -1110,9 +576,8 @@ def step3_selection():
 
 def step4_migration_options():
     """Step 4: Configure migration options"""
-    st.markdown('<div class="step-header">Step 4: Migration Options</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="info-box">Configure how the migration should handle conflicts and existing objects.</div>', unsafe_allow_html=True)
+    st.header("Step 4: Migration Options")
+    st.info("Configure how the migration should handle conflicts and existing objects.")
 
     # Selection Summary
     st.subheader("📊 Selection Summary")
@@ -1278,10 +743,10 @@ def step4_migration_options():
 
 def step5_migration():
     """Step 5: Execute migration"""
-    st.markdown('<div class="step-header">Step 5: Migration Execution</div>', unsafe_allow_html=True)
+    st.header("Step 5: Migration Execution")
 
     if st.session_state.migration_results is None:
-        st.markdown('<div class="info-box">Ready to start migration. This process will run without interruption.</div>', unsafe_allow_html=True)
+        st.info("Ready to start migration. This process will run without interruption.")
 
         # Show final summary
         selected = get_selected_objects()
@@ -1290,7 +755,7 @@ def step5_migration():
                 len(selected['triggers']) + len(selected['views']) +
                 len(selected['sequences']))
 
-        st.markdown(f'<div class="success-box"><strong>📊 TOTAL OBJECTS TO MIGRATE: {total}</strong></div>', unsafe_allow_html=True)
+        st.success(f"📊 **TOTAL OBJECTS TO MIGRATE: {total}**")
 
         # Show breakdown by type
         col1, col2, col3, col4, col5 = st.columns(5)
@@ -1567,14 +1032,17 @@ def calculate_migration_stats(results: dict) -> dict:
     
     # Calculate by type
     for obj_type, obj_results in results.get('results', {}).items():
-        if obj_results:
-            type_success = sum(1 for r in obj_results if r.get('status') in ['success', 'partial'])
-            type_total = len(obj_results)
-            stats['by_type'][obj_type] = {
-                'total': type_total,
-                'success': type_success,
-                'success_rate': (type_success / type_total * 100) if type_total > 0 else 0
-            }
+        if obj_results and isinstance(obj_results, list):
+            # Filter out non-dict entries (like strings from foreign_keys)
+            valid_results = [r for r in obj_results if isinstance(r, dict)]
+            if valid_results:
+                type_success = sum(1 for r in valid_results if r.get('status') in ['success', 'partial'])
+                type_total = len(valid_results)
+                stats['by_type'][obj_type] = {
+                    'total': type_total,
+                    'success': type_success,
+                    'success_rate': (type_success / type_total * 100) if type_total > 0 else 0
+                }
     
     return stats
 
@@ -1758,56 +1226,27 @@ def execute_migration():
         success_count = 0
         failure_count = 0
 
-        # ============================================================
-        # WORLD-CLASS PROFESSIONAL UI - Enterprise Migration Dashboard
-        # ============================================================
+        # Simple, clean migration UI
+        st.subheader("🚀 Migration in Progress")
+        st.caption("AI-powered migration • Real-time tracking")
 
-        # Hero Banner with animated background
-        st.markdown('''
-        <div class="hero-banner">
-            <div style="position: relative; z-index: 10;">
-                <h1 style="font-size: 3rem; margin: 0; text-shadow: 0 2px 10px rgba(0,0,0,0.3);">
-                    🚀 Migration in Progress
-                </h1>
-                <p style="font-size: 1.2rem; margin-top: 0.5rem; opacity: 0.9;">
-                    Powered by AI Agents • Real-time Orchestration • Enterprise Grade
-                </p>
-            </div>
-        </div>
-        ''', unsafe_allow_html=True)
-
-        # Professional Metrics Dashboard with custom cards
-        st.markdown('<div class="stats-dashboard">', unsafe_allow_html=True)
+        # Simple metrics
         col1, col2, col3, col4 = st.columns(4)
+        col1.metric("🎯 Total", total_objects)
+        metric_success = col2.empty()
+        metric_failed = col3.empty()
+        metric_progress = col4.empty()
 
-        with col1:
-            st.markdown('''
-            <div class="metric-card-pro fade-in-up">
-                <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">🎯 TOTAL OBJECTS</div>
-                <div style="font-size: 2.5rem; font-weight: bold; color: #667eea;">{}</div>
-            </div>
-            '''.format(total_objects), unsafe_allow_html=True)
+        # Simple progress bar
+        progress_bar = st.progress(0)
+        progress_text = st.empty()
 
-        metric_success_container = col2.empty()
-        metric_failed_container = col3.empty()
-        metric_progress_container = col4.empty()
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Professional Progress Bar with percentage
-        progress_container = st.empty()
-
-        # Agent Workflow Visualization
-        st.markdown("---")
-        st.markdown('<h3 style="text-align: center; color: #667eea;">🤖 Live Agent Workflow</h3>', unsafe_allow_html=True)
-        workflow_container = st.empty()
-
-        # Current Operation Banner
+        # Current operation
         current_operation = st.empty()
 
-        # Live Migration Timeline
-        st.markdown("---")
-        st.markdown('<h3 style="text-align: center; color: #667eea;">📋 Migration Timeline</h3>', unsafe_allow_html=True)
+        # Migration log
+        st.divider()
+        st.subheader("📋 Migration Log")
         log_container = st.container()
 
         logs = []
@@ -1815,131 +1254,52 @@ def execute_migration():
         start_time = time.time()
 
         def update_metrics():
-            """Update professional dashboard metrics with animations"""
-            # Success metric
-            with metric_success_container:
-                st.markdown(f'''
-                <div class="metric-card-pro scale-up">
-                    <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">✅ COMPLETED</div>
-                    <div style="font-size: 2.5rem; font-weight: bold; color: #38ef7d;">{success_count}</div>
-                    <div style="font-size: 0.75rem; color: #999; margin-top: 0.25rem;">+{success_count} migrated</div>
-                </div>
-                ''', unsafe_allow_html=True)
+            """Update simple metrics"""
+            metric_success.metric("✅ Success", success_count)
+            metric_failed.metric("❌ Failed", failure_count)
 
-            # Failed metric
-            with metric_failed_container:
-                st.markdown(f'''
-                <div class="metric-card-pro scale-up">
-                    <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">❌ FAILED</div>
-                    <div style="font-size: 2.5rem; font-weight: bold; color: #f45c43;">{failure_count}</div>
-                    <div style="font-size: 0.75rem; color: #999; margin-top: 0.25rem;">{"Issues detected" if failure_count > 0 else "No failures"}</div>
-                </div>
-                ''', unsafe_allow_html=True)
+            progress_pct = (current_idx / total_objects) if total_objects > 0 else 0
+            metric_progress.metric("📊 Progress", f"{int(progress_pct * 100)}%")
 
-            # Progress metric
-            progress_pct = int((current_idx / total_objects) * 100) if total_objects > 0 else 0
-            elapsed = time.time() - start_time
-            eta = (elapsed / current_idx * (total_objects - current_idx)) if current_idx > 0 else 0
+            progress_bar.progress(progress_pct)
+            elapsed = int(time.time() - start_time)
+            eta = int((elapsed / current_idx * (total_objects - current_idx))) if current_idx > 0 else 0
+            progress_text.text(f"Progress: {current_idx}/{total_objects} | Elapsed: {elapsed}s | ETA: {eta}s")
 
-            with metric_progress_container:
-                st.markdown(f'''
-                <div class="metric-card-pro scale-up">
-                    <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">📊 PROGRESS</div>
-                    <div style="font-size: 2.5rem; font-weight: bold; color: #764ba2;">{progress_pct}%</div>
-                    <div style="font-size: 0.75rem; color: #999; margin-top: 0.25rem;">ETA: {int(eta)}s</div>
-                </div>
-                ''', unsafe_allow_html=True)
-
-            # Animated progress bar
-            with progress_container:
-                st.markdown(f'''
-                <div class="progress-bar-container fade-in-up">
-                    <div class="progress-bar-fill" style="width: {progress_pct}%;"></div>
-                    <div class="progress-percentage">{progress_pct}% Complete</div>
-                </div>
-                ''', unsafe_allow_html=True)
-
-        def show_agent_workflow(current_agent="fetch", object_name=""):
-            """Display animated agent workflow pipeline"""
-            agents = [
-                {"id": "fetch", "icon": "🔵", "name": "Fetch"},
-                {"id": "convert", "icon": "🔄", "name": "Convert"},
-                {"id": "review", "icon": "👁️", "name": "Review"},
-                {"id": "deploy", "icon": "🚀", "name": "Deploy"}
-            ]
-
-            workflow_html = '<div class="agent-workflow fade-in-up">'
-
-            for i, agent in enumerate(agents):
-                active_class = "active" if agent["id"] == current_agent else ""
-                workflow_html += f'''
-                <div class="agent-node {active_class}" title="{agent['name']}">
-                    {agent['icon']}
-                </div>
-                '''
-                if i < len(agents) - 1:
-                    connector_class = "animated" if agents[i]["id"] == current_agent else ""
-                    workflow_html += f'<div class="agent-connector {connector_class}"></div>'
-
-            workflow_html += '</div>'
-
-            if object_name:
-                workflow_html += f'<p style="text-align: center; margin-top: 1rem; color: #666; font-size: 0.9rem;">Processing: <strong>{object_name}</strong></p>'
-
-            with workflow_container:
-                st.markdown(workflow_html, unsafe_allow_html=True)
-
-        def add_log(message, level="info"):
-            """Add log entry with timeline visualization"""
-            logs.append({"msg": message, "level": level, "time": datetime.now().strftime("%H:%M:%S")})
+        def add_log(message):
+            """Add log entry with professional formatting"""
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            
+            # Filter out verbose internal messages
+            if any(skip_pattern in message.lower() for skip_pattern in ['debug', 'trace', 'verbose', 'internal']):
+                return
+            
+            # Format the log entry with color coding
+            formatted_msg = render_log_entry(message)
+            logs.append(f"`{timestamp}` {formatted_msg}")
+            
+            # Display in container with professional styling
             with log_container:
-                timeline_html = '<div class="timeline">'
-                for log in logs[-15:]:  # Show last 15 logs
-                    timeline_html += f'''
-                    <div class="timeline-item {log['level']}">
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="color: #999; font-size: 0.75rem;">{log['time']}</span>
-                            <span style="flex: 1;">{log['msg']}</span>
-                        </div>
-                    </div>
-                    '''
-                timeline_html += '</div>'
-                st.markdown(timeline_html, unsafe_allow_html=True)
+                # Show only last15 logs to keep it clean
+                st.markdown("---")
+                for log in logs[-15:]:
+                    st.markdown(log)
 
-        # Migrate tables with professional workflow visualization
+        # Migrate tables
         if selected['tables']:
-            current_operation.markdown(f'<div class="info-box bounce-effect"><strong>📋 Migrating Tables: {len(selected["tables"])} objects</strong></div>', unsafe_allow_html=True)
+            current_operation.info(f"📋 Migrating {len(selected['tables'])} Tables...")
 
             for i, table_name in enumerate(selected['tables'], 1):
-                add_log(f"[{i}/{len(selected['tables'])}] Starting: TABLE {table_name}", "info")
-
-                # Phase 1: Fetch
-                show_agent_workflow("fetch", table_name)
-                time.sleep(0.2)
-
-                # Phase 2: Convert
-                show_agent_workflow("convert", table_name)
-                time.sleep(0.2)
-
-                # Phase 3: Review
-                show_agent_workflow("review", table_name)
-                time.sleep(0.2)
-
-                # Phase 4: Deploy
-                show_agent_workflow("deploy", table_name)
-
-                # Actual migration
                 result = orchestrator.orchestrate_table_migration(table_name)
+                result['object_name'] = table_name
+                result['object_type'] = 'TABLE'
                 results["tables"].append(result)
 
                 if result.get("status") == "success":
                     success_count += 1
-                    add_log(f"✅ {table_name} schema migrated successfully", "success")
-
+                    
                     # Migrate data if selected
                     if table_name in selected['tables_with_data']:
-                        add_log(f"📊 Transferring data for {table_name}...", "info")
-
                         data_result = migrate_table_data(
                             st.session_state.oracle_creds,
                             st.session_state.sqlserver_creds,
@@ -1948,132 +1308,93 @@ def execute_migration():
 
                         if data_result.get("status") == "success":
                             rows = data_result.get("rows_migrated", 0)
-                            add_log(f"✅ Data migrated: {rows:,} rows", "success")
+                            add_log(f"✅ **{table_name}** — {rows:,} rows")
                         else:
-                            add_log(f"⚠️ Data migration partial/failed", "warning")
+                            add_log(f"⚠️ **{table_name}** — structure only")
+                    else:
+                        add_log(f"✅ **{table_name}** — structure")
                 else:
                     failure_count += 1
-                    add_log(f"❌ Failed to migrate {table_name}", "error")
+                    add_log(f"❌ **{table_name}** — failed")
 
                 current_idx += 1
                 update_metrics()
-                time.sleep(0.15)
 
-        # Migrate packages
+        # Apply foreign keys after all tables are created
+        if selected['tables']:
+            current_operation.info("🔗 Applying Foreign Keys...")
+            fk_result = orchestrator.apply_all_foreign_keys()
+
+            if fk_result.get('total', 0) > 0:
+                applied = fk_result.get('applied', 0)
+                failed = fk_result.get('failed', 0)
+                add_log(f"🔗 Foreign Keys: {applied} applied, {failed} failed" if failed > 0 else f"🔗 Foreign Keys: {applied} applied")
+                results["foreign_keys"] = fk_result
+
+        # Migrate packages  
         if selected['packages']:
-            current_operation.markdown(f'<div class="info-box bounce-effect"><strong>📦 Migrating Packages: {len(selected["packages"])} objects</strong></div>', unsafe_allow_html=True)
+            current_operation.info(f"📦 Migrating {len(selected['packages'])} Packages...")
 
             for i, pkg_name in enumerate(selected['packages'], 1):
-                add_log(f"[{i}/{len(selected['packages'])}] Starting: PACKAGE {pkg_name}", "info")
-
-                show_agent_workflow("fetch", pkg_name)
-                time.sleep(0.15)
-                show_agent_workflow("convert", pkg_name)
-                time.sleep(0.15)
-                show_agent_workflow("deploy", pkg_name)
-
                 result = orchestrator.orchestrate_code_object_migration(pkg_name, "PACKAGE")
+                result['object_name'] = pkg_name
+                result['object_type'] = 'PACKAGE'
                 results["packages"].append(result)
 
                 if result.get("status") in ["success", "partial"]:
                     success_count += 1
                     member_count = result.get("total_members", 0)
-                    add_log(f"✅ {pkg_name} migrated ({member_count} members)", "success")
+                    success_members = result.get("success_count", 0)
+                    if result.get("status") == "success":
+                        add_log(f"✅ **{pkg_name}** — {success_members}/{member_count} members")
+                    else:
+                        add_log(f"⚠️ **{pkg_name}** — {success_members}/{member_count} members")
                 else:
                     failure_count += 1
-                    add_log(f"❌ Failed to migrate {pkg_name}", "error")
+                    add_log(f"❌ **{pkg_name}** — failed")
 
                 current_idx += 1
                 update_metrics()
-                time.sleep(0.15)
 
-        # Migrate other objects with workflow visualization
-        obj_icons = {"procedures": "⚙️", "functions": "🔧", "triggers": "⚡", "views": "👁️", "sequences": "🔢"}
+        # Migrate other objects
+        obj_config = {
+            "procedures": ("⚙️", "Procedures"),
+            "functions": ("🔧", "Functions"),
+            "triggers": ("⚡", "Triggers"),
+            "views": ("👁️", "Views"),
+            "sequences": ("🔢", "Sequences")
+        }
 
-        for obj_type, obj_list, display_name in [
-            ("procedures", selected['procedures'], "Procedures"),
-            ("functions", selected['functions'], "Functions"),
-            ("triggers", selected['triggers'], "Triggers"),
-            ("views", selected['views'], "Views"),
-            ("sequences", selected['sequences'], "Sequences")
-        ]:
+        for obj_type in ["procedures", "functions", "triggers", "views", "sequences"]:
+            obj_list = selected[obj_type]
             if obj_list:
-                icon = obj_icons.get(obj_type, "📄")
-                current_operation.markdown(f'<div class="info-box bounce-effect"><strong>{icon} Migrating {display_name}: {len(obj_list)} objects</strong></div>', unsafe_allow_html=True)
+                icon, display_name = obj_config[obj_type]
+                current_operation.info(f"{icon} Migrating {len(obj_list)} {display_name}...")
 
-                for i, obj_name in enumerate(obj_list, 1):
-                    add_log(f"[{i}/{len(obj_list)}] Starting: {obj_type[:-1].upper()} {obj_name}", "info")
-
-                    show_agent_workflow("fetch", obj_name)
-                    time.sleep(0.1)
-                    show_agent_workflow("convert", obj_name)
-                    time.sleep(0.1)
-                    show_agent_workflow("review", obj_name)
-                    time.sleep(0.1)
-                    show_agent_workflow("deploy", obj_name)
-
+                for obj_name in obj_list:
                     result = orchestrator.orchestrate_code_object_migration(obj_name, obj_type[:-1].upper())
+                    result['object_name'] = obj_name
+                    result['object_type'] = obj_type[:-1].upper()
                     results[obj_type].append(result)
 
                     if result.get("status") == "success":
                         success_count += 1
-                        add_log(f"✅ {obj_name} migrated successfully", "success")
+                        add_log(f"✅ **{obj_name}**")
                     else:
                         failure_count += 1
-                        add_log(f"❌ Failed to migrate {obj_name}", "error")
+                        add_log(f"❌ **{obj_name}**")
 
                     current_idx += 1
                     update_metrics()
-                    time.sleep(0.1)
 
-        # Migration Complete! - Grand Finale with Celebration
+        # Migration Complete!
         update_metrics()
-        add_log("🎉 Migration completed!", "success")
+        add_log("🎉 Migration completed!")
 
-        # Clear workflow to show completion
-        with workflow_container:
-            st.markdown('''
-            <div class="agent-workflow fade-in-up">
-                <div class="agent-node active" style="width: 150px; height: 150px; font-size: 4rem; animation: bounce 1s;">
-                    ✅
-                </div>
-            </div>
-            ''', unsafe_allow_html=True)
-
-        # Grand success banner
         total_time = int(time.time() - start_time)
         success_rate = int((success_count / total_objects) * 100) if total_objects > 0 else 0
 
-        current_operation.markdown(f'''
-        <div class="hero-banner bounce-effect" style="margin: 2rem 0;">
-            <div style="position: relative; z-index: 10;">
-                <h1 style="font-size: 3.5rem; margin: 0; text-shadow: 0 2px 15px rgba(0,0,0,0.4);">
-                    🎉 Migration Complete! 🎉
-                </h1>
-                <div style="margin-top: 2rem; display: flex; justify-content: center; gap: 3rem; flex-wrap: wrap;">
-                    <div>
-                        <div style="font-size: 3rem; font-weight: bold;">{success_count}</div>
-                        <div style="font-size: 1.2rem; opacity: 0.9;">Successful</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 3rem; font-weight: bold;">{failure_count}</div>
-                        <div style="font-size: 1.2rem; opacity: 0.9;">Failed</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 3rem; font-weight: bold;">{success_rate}%</div>
-                        <div style="font-size: 1.2rem; opacity: 0.9;">Success Rate</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 3rem; font-weight: bold;">{total_time}s</div>
-                        <div style="font-size: 1.2rem; opacity: 0.9;">Total Time</div>
-                    </div>
-                </div>
-                <p style="margin-top: 2rem; font-size: 1.1rem; opacity: 0.9;">
-                    ✨ All objects processed • Results saved • Ready for verification
-                </p>
-            </div>
-        </div>
-        ''', unsafe_allow_html=True)
+        current_operation.success(f"🎉 **Migration Complete!** | Success: {success_count} | Failed: {failure_count} | Success Rate: {success_rate}% | Time: {total_time}s")
 
         # Save results
         final_results = {
@@ -2108,7 +1429,7 @@ def display_migration_results():
     """Display migration results with enhanced formatting"""
     results = st.session_state.migration_results
 
-    st.markdown('<div class="success-box">✅ Migration completed!</div>', unsafe_allow_html=True)
+    st.success("✅ Migration completed!")
 
     # Calculate stats
     stats = calculate_migration_stats(results)
@@ -2200,9 +1521,8 @@ def display_migration_results():
 
 def step6_verification():
     """Step 6: Post-Migration Verification"""
-    st.markdown('<div class="step-header">Step 6: Post-Migration Verification</div>', unsafe_allow_html=True)
-    
-    st.markdown('<div class="info-box">Verify migrated data and review unresolved issues.</div>', unsafe_allow_html=True)
+    st.header("Step 6: Post-Migration Verification")
+    st.info("Verify migrated data and review unresolved issues.")
 
     tabs = st.tabs(["🔍 Data Verification", "⚠️ Unresolved Issues", "🧠 Migration Memory"])
 

@@ -164,12 +164,40 @@ class OracleConnector:
             return self.get_object_code(object_name, object_type)
 
     def get_sequence_ddl(self, sequence_name: str) -> str:
-        """Get DDL for a sequence"""
-        query = f"SELECT DBMS_METADATA.GET_DDL('SEQUENCE', '{sequence_name}') FROM DUAL"
-        result = self.execute_query(query)
-        if result:
-            return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
-        return ""
+        """
+        Get DDL for a sequence
+        
+        Skips internal Oracle identity sequences (ISEQ$$_%) as they are
+        automatically handled via IDENTITY columns in SQL Server.
+        
+        Args:
+            sequence_name: Name of the sequence
+            
+        Returns:
+            DDL string, or skip message for internal sequences
+        """
+        # Check if this is an internal Oracle identity sequence
+        if sequence_name.startswith('ISEQ$$_'):
+            logger.info(f"⏭️  Skipping internal Oracle identity sequence {sequence_name} – handled via IDENTITY column in SQL Server")
+            return "-- SKIP: Internal Oracle identity sequence - handled via IDENTITY column in SQL Server"
+        
+        try:
+            query = f"SELECT DBMS_METADATA.GET_DDL('SEQUENCE', '{sequence_name}') FROM DUAL"
+            result = self.execute_query(query)
+            if result:
+                return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
+            return ""
+        except Exception as e:
+            error_str = str(e)
+            # ORA-31603: object "sequence_name" of type SEQUENCE not found in schema "user"
+            # This can happen for internal sequences that aren't accessible via DBMS_METADATA
+            if 'ORA-31603' in error_str:
+                logger.warning(f"⏭️  Skipping sequence {sequence_name} (ORA-31603 - likely internal identity sequence)")
+                return "-- SKIP: Internal Oracle sequence (ORA-31603) - handled via IDENTITY column in SQL Server"
+            else:
+                # Re-raise other errors
+                logger.error(f"Failed to get DDL for sequence {sequence_name}: {e}")
+                raise
 
     def get_view_ddl(self, view_name: str) -> str:
         """Get DDL for a view"""
@@ -179,21 +207,7 @@ class OracleConnector:
             return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
         return ""
 
-    def get_sequence_ddl(self, sequence_name: str) -> str:
-        """Get DDL for a sequence"""
-        query = f"SELECT DBMS_METADATA.GET_DDL('SEQUENCE', '{sequence_name}') FROM DUAL"
-        result = self.execute_query(query)
-        if result:
-            return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
-        return ""
 
-    def get_view_ddl(self, view_name: str) -> str:
-        """Get DDL for a view"""
-        query = f"SELECT DBMS_METADATA.GET_DDL('VIEW', '{view_name}') FROM DUAL"
-        result = self.execute_query(query)
-        if result:
-            return result[0][0].read() if hasattr(result[0][0], 'read') else str(result[0][0])
-        return ""
     
     def list_tables(self) -> List[str]:
         """Get list of all user tables"""
@@ -249,6 +263,131 @@ class OracleConnector:
         results = self.execute_query(query)
         return [row[0] for row in results]
     
+    def list_sequences(self) -> List[str]:
+        """
+        Get list of all user-created sequences
+
+        Excludes Oracle system-generated sequences:
+        - ISEQ$$_ prefix (Oracle 12c+ IDENTITY column sequences)
+        """
+        query = """
+        SELECT SEQUENCE_NAME
+        FROM USER_SEQUENCES
+        WHERE SEQUENCE_NAME NOT LIKE 'ISEQ$$_%'
+        ORDER BY SEQUENCE_NAME
+        """
+        results = self.execute_query(query)
+        return [row[0] for row in results]
+    
+    def list_views(self) -> List[str]:
+        """Get list of all views"""
+        query = """
+        SELECT VIEW_NAME
+        FROM USER_VIEWS
+        ORDER BY VIEW_NAME
+        """
+        results = self.execute_query(query)
+        return [row[0] for row in results]
+    
+    def discover_foreign_keys(self, schema: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Discover all foreign key constraints from Oracle
+        
+        Queries ALL_CONSTRAINTS and ALL_CONS_COLUMNS to get complete FK metadata
+        including child table, child columns, parent table, parent columns, and delete rules.
+        
+        Args:
+            schema: Optional schema name (default: current user)
+            
+        Returns:
+            List of dictionaries with FK metadata:
+            {
+                'constraint_name': str,
+                'child_schema': str,
+                'child_table': str,
+                'child_columns': List[str],
+                'parent_schema': str,
+                'parent_table': str,
+                'parent_columns': List[str],
+                'delete_rule': str,  # CASCADE, SET NULL, NO ACTION
+                'status': str  # ENABLED, DISABLED
+            }
+        """
+        # Use current user schema if not specified
+        schema_clause = "ac.owner = :schema" if schema else "ac.owner = USER"
+        schema_param = {'schema': schema.upper()} if schema else {}
+        
+        # Query to get FK constraints with child and parent info
+        query = f"""
+        WITH fk_constraints AS (
+            SELECT 
+                ac.owner as child_schema,
+                ac.constraint_name,
+                ac.table_name as child_table,
+                ac.r_constraint_name as parent_constraint,
+                ac.delete_rule,
+                ac.status
+            FROM all_constraints ac
+            WHERE {schema_clause}
+              AND ac.constraint_type = 'R'
+        ),
+        child_columns AS (
+            SELECT 
+                constraint_name,
+                LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY position) as columns
+            FROM all_cons_columns
+            WHERE owner = :schema OR owner = USER
+            GROUP BY constraint_name
+        ),
+        parent_info AS (
+            SELECT 
+                ac.constraint_name,
+                ac.owner as parent_schema,
+                ac.table_name as parent_table
+            FROM all_constraints ac
+        )
+        SELECT 
+            fk.child_schema,
+            fk.constraint_name,
+            fk.child_table,
+            cc.columns as child_columns,
+            pi.parent_schema,
+            pi.parent_table,
+            pc.columns as parent_columns,
+            fk.delete_rule,
+            fk.status
+        FROM fk_constraints fk
+        JOIN child_columns cc ON fk.constraint_name = cc.constraint_name
+        JOIN parent_info pi ON fk.parent_constraint = pi.constraint_name
+        JOIN child_columns pc ON fk.parent_constraint = pc.constraint_name
+        ORDER BY fk.constraint_name
+        """
+        
+        try:
+            results = self.execute_query(query, tuple(schema_param.values()) if schema_param else None)
+            
+            foreign_keys = []
+            for row in results:
+                fk = {
+                    'constraint_name': row[1],
+                    'child_schema': row[0],
+                    'child_table': row[2],
+                    'child_columns': row[3].split(',') if row[3] else [],
+                    'parent_schema': row[4],
+                    'parent_table': row[5],
+                    'parent_columns': row[6].split(',') if row[6] else [],
+                    'delete_rule': row[7] if row[7] else 'NO ACTION',
+                    'status': row[8]
+                }
+                foreign_keys.append(fk)
+            
+            logger.info(f"✅ Discovered {len(foreign_keys)} foreign key constraint(s)")
+            return foreign_keys
+            
+        except Exception as e:
+            logger.error(f"Failed to discover foreign keys: {e}")
+            return []
+    
     def get_table_data(self, table_name: str, batch_size: int = 1000):
         """
         Generator to fetch table data in batches
@@ -288,6 +427,8 @@ class OracleConnector:
             List of dictionaries (one per row)
         """
         cursor = self.connection.cursor()
+        # Set arraysize for efficient batch fetching (does NOT limit total rows)
+        cursor.arraysize = 1000
 
         query = f"SELECT * FROM {table_name}"
         cursor.execute(query)
@@ -319,6 +460,27 @@ class OracleConnector:
             result.append(row_dict)
 
         return result
+
+    def get_table_row_count(self, table_name: str) -> int:
+        """
+        Get the number of rows in a table
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            Number of rows
+        """
+        try:
+            cursor = self.connection.cursor()
+            query = f"SELECT COUNT(*) FROM {table_name}"
+            cursor.execute(query)
+            count = cursor.fetchone()[0]
+            cursor.close()
+            return count
+        except Exception as e:
+            logger.error(f"Failed to get row count for {table_name}: {e}")
+            return 0
 
     def __enter__(self):
         """Context manager entry"""

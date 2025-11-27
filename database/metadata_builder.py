@@ -370,6 +370,7 @@ class OracleMemoryBuilder:
             SELECT sequence_name, min_value, max_value, increment_by, cycle_flag
             FROM all_sequences
             WHERE sequence_owner = :owner
+            AND sequence_name NOT LIKE 'ISEQ$_%'
         """
 
         seqs = []

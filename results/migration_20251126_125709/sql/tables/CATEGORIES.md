@@ -1,0 +1,14 @@
+# SQL Server TABLE: CATEGORIES
+
+**Source**: SQL Server (Converted)  
+**Captured**: 2025-11-26 12:57:19  
+
+## Source Code
+
+```sql
+CREATE TABLE [dbo].[CATEGORIES] (
+    [CATEGORY_ID] DECIMAL(38,0) IDENTITY(1,1) NOT NULL,
+    [CATEGORY_NAME] NVARCHAR(60) NOT NULL,
+    CONSTRAINT [PK_CATEGORIES] PRIMARY KEY ([CATEGORY_ID])
+);
+```

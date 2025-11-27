@@ -390,11 +390,45 @@ def _migrate_sequences_automatic(
     sequences: List[str],
     stats: Dict
 ):
-    """Migrate sequences (convert to identity columns or sequences)"""
+    """
+    Migrate sequences (convert to identity columns or sequences)
+    
+    Note: Internal Oracle identity sequences (ISEQ$$_%) are automatically
+    filtered during discovery and handled via IDENTITY columns in SQL Server.
+    """
+    # Check if all sequences were internal (filtered out during discovery)
+    if not sequences:
+        print("  ℹ️  No user-created sequences to migrate")
+        print("      (Internal identity sequences are handled via IDENTITY columns)")
+        stats["sequences"]["completed"] = True
+        stats["sequences"]["message"] = "No user sequences - internal identity sequences handled via IDENTITY columns"
+        return
+    
+    # Migrate user-created sequences
+    skipped_count = 0
     for idx, seq_name in enumerate(sequences, 1):
         print(f"  [{idx}/{len(sequences)}] {seq_name}...", end=" ")
-        print("⚠️  Manual review recommended")
-        stats["sequences"]["skipped"] += 1
+        
+        # Try to get DDL - may return skip message for internal sequences
+        try:
+            ddl = orchestrator.oracle_conn.get_sequence_ddl(seq_name)
+            if ddl and ddl.startswith("-- SKIP:"):
+                print("⏭️  Skipped (internal identity sequence)")
+                skipped_count += 1
+                stats["sequences"]["skipped"] += 1
+            else:
+                print("⚠️  Manual review recommended")
+                stats["sequences"]["skipped"] += 1
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            stats["sequences"]["failed"] += 1
+    
+    # Report completion status
+    if skipped_count == len(sequences):
+        print(f"\n  ✅ All {len(sequences)} sequence(s) were internal identity sequences")
+        print("      These are handled automatically via IDENTITY columns in SQL Server")
+        stats["sequences"]["completed"] = True
+        stats["sequences"]["message"] = "All sequences were internal - handled via IDENTITY columns"
 
 
 def _print_automatic_migration_summary(stats: Dict):

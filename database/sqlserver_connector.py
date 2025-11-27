@@ -26,20 +26,34 @@ class SQLServerConnector:
     def connect(self) -> bool:
         """Establish connection to SQL Server database"""
         try:
-            # Support both 'user' and 'username' keys for flexibility
-            username = self.credentials.get('user') or self.credentials.get('username')
-            if not username:
-                raise ValueError("Missing 'user' or 'username' in credentials")
-
             driver = self.credentials.get('driver', 'ODBC Driver 18 for SQL Server')
-            conn_str = (
-                f"DRIVER={{{driver}}};"
-                f"SERVER={self.credentials['server']};"
-                f"DATABASE={self.credentials['database']};"
-                f"UID={username};"
-                f"PWD={self.credentials['password']};"
-                f"TrustServerCertificate=yes;"
-            )
+
+            # Check if using Windows Authentication
+            trusted = self.credentials.get('trusted_connection', '').lower() in ('yes', 'true', '1')
+
+            if trusted:
+                # Windows Authentication
+                conn_str = (
+                    f"DRIVER={{{driver}}};"
+                    f"SERVER={self.credentials['server']};"
+                    f"DATABASE={self.credentials['database']};"
+                    f"Trusted_Connection=yes;"
+                    f"TrustServerCertificate=yes;"
+                )
+            else:
+                # SQL Server Authentication
+                username = self.credentials.get('user') or self.credentials.get('username')
+                if not username:
+                    raise ValueError("Missing 'user' or 'username' in credentials for SQL Server authentication")
+
+                conn_str = (
+                    f"DRIVER={{{driver}}};"
+                    f"SERVER={self.credentials['server']};"
+                    f"DATABASE={self.credentials['database']};"
+                    f"UID={username};"
+                    f"PWD={self.credentials['password']};"
+                    f"TrustServerCertificate=yes;"
+                )
 
             self.connection = pyodbc.connect(conn_str)
             logger.info("✅ SQL Server connection established")
@@ -239,42 +253,86 @@ class SQLServerConnector:
     
     def get_table_columns(self, table_name: str, schema: str = "dbo") -> List[Dict]:
         """
-        Get table column information
+        Get column information for a table
+        
+        Args:
+            table_name: Name of the table
+            schema: Schema name
+            
+        Returns:
+            List of dictionaries with column info
+        """
+        query = """
+        SELECT 
+            COLUMN_NAME,
+            DATA_TYPE,
+            IS_NULLABLE,
+            COLUMN_DEFAULT,
+            CHARACTER_MAXIMUM_LENGTH,
+            COLUMNPROPERTY(OBJECT_ID(TABLE_SCHEMA + '.' + TABLE_NAME), 
+                         COLUMN_NAME, 'IsIdentity') as IS_IDENTITY
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = ?
+          AND TABLE_SCHEMA = ?
+        ORDER BY ORDINAL_POSITION
+        """
+        
+        cursor = self.connection.cursor()
+        cursor.execute(query, (table_name, schema))
+        
+        columns = []
+        for row in cursor.fetchall():
+            columns.append({
+                'name': row[0],
+                'type': row[1],
+                'nullable': row[2] == 'YES',
+                'default': row[3],
+                'max_length': row[4],
+                'is_identity': bool(row[5])
+            })
+        
+        cursor.close()
+        return columns
+    
+    def get_computed_columns(self, table_name: str, schema: str = "dbo") -> List[str]:
+        """
+        Get list of computed column names for a table
+        
+        Computed columns in SQL Server are auto-calculated and cannot have values inserted.
+        This method identifies them so they can be excluded from INSERT statements.
         
         Args:
             table_name: Name of the table
             schema: Schema name (default: dbo)
             
         Returns:
-            List of column dictionaries
+            List of computed column names
         """
         query = """
-        SELECT 
-            COLUMN_NAME,
-            DATA_TYPE,
-            CHARACTER_MAXIMUM_LENGTH,
-            IS_NULLABLE,
-            COLUMN_DEFAULT,
-            COLUMNPROPERTY(OBJECT_ID(TABLE_SCHEMA + '.' + TABLE_NAME), 
-                         COLUMN_NAME, 'IsIdentity') as IS_IDENTITY
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-        ORDER BY ORDINAL_POSITION
+        SELECT c.name as column_name
+        FROM sys.columns c
+        INNER JOIN sys.tables t ON c.object_id = t.object_id
+        INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+        WHERE t.name = ?
+          AND s.name = ?
+          AND c.is_computed = 1
         """
-        results = self.execute_query(query, (schema, table_name))
         
-        columns = []
-        for row in results:
-            columns.append({
-                'name': row[0],
-                'type': row[1],
-                'max_length': row[2],
-                'nullable': row[3] == 'YES',
-                'default': row[4],
-                'is_identity': bool(row[5])
-            })
-        
-        return columns
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query, (table_name, schema))
+            
+            computed_cols = [row[0] for row in cursor.fetchall()]
+            cursor.close()
+            
+            if computed_cols:
+                logger.info(f"🔍 Found {len(computed_cols)} computed column(s) in {table_name}: {computed_cols}")
+            
+            return computed_cols
+            
+        except Exception as e:
+            logger.warning(f"Could not detect computed columns for {table_name}: {e}")
+            return []
     
     def set_identity_insert(self, table_name: str, enabled: bool) -> bool:
         """
@@ -298,53 +356,114 @@ class SQLServerConnector:
             logger.error(f"Failed to set IDENTITY_INSERT: {e}")
             return False
 
-    def bulk_insert_data(self, table_name: str, data: List[Dict], identity_columns: List[str] = None) -> int:
+    def bulk_insert_data(self, table_name: str, rows: List[tuple], 
+                         identity_columns: List[str] = None) -> int:
         """
-        Bulk insert data into table from list of dictionaries
-
+        Insert multiple rows into table, handling IDENTITY columns and computed columns
+        
         Args:
             table_name: Name of the table
-            data: List of dictionaries (one per row)
+            rows: List of row tuples
             identity_columns: List of IDENTITY column names (optional)
-
+            
         Returns:
             Number of rows inserted
         """
-        if not data:
+        if not rows:
+            logger.warning(f"No data to insert into {table_name}")
             return 0
-
+        
         try:
-            # Enable IDENTITY_INSERT if needed
+            # Get all table columns
+            all_columns_info = self.get_table_columns(table_name)
+            all_columns = [col['name'] for col in all_columns_info]
+            
+            # Detect computed columns (cannot be inserted)
+            computed_columns = self.get_computed_columns(table_name)
+            
+            # Filter out computed columns from columns and data
+            if computed_columns:
+                logger.info(f"⏭️  Excluding {len(computed_columns)} computed column(s) from INSERT: {computed_columns}")
+                
+                # Filter columns list to exclude computed ones
+                insertable_columns = [col for col in all_columns if col not in computed_columns]
+                
+                # Convert dictionary rows to tuples with only insertable columns
+                filtered_rows = []
+                for row in rows:
+                    if isinstance(row, dict):
+                        # Dictionary from Oracle - extract only insertable columns
+                        filtered_row = tuple(row.get(col) for col in insertable_columns)
+                    else:
+                        # Already a tuple - filter by index
+                        non_computed_indices = [idx for idx, col in enumerate(all_columns) if col not in computed_columns]
+                        filtered_row = tuple(row[idx] for idx in non_computed_indices if idx < len(row))
+                    filtered_rows.append(filtered_row)
+                
+                columns = insertable_columns
+                rows = filtered_rows
+            else:
+                # No computed columns - convert dicts to tuples if needed
+                columns = all_columns
+                if rows and isinstance(rows[0], dict):
+                    rows = [tuple(row.get(col) for col in columns) for row in rows]
+            
+            logger.info(f"Inserting data with columns: {columns}") 
+            
+            # Handle IDENTITY columns
+            identity_enabled = False
             if identity_columns:
-                self.set_identity_insert(table_name, True)
-
-            # Get column names from first row
-            columns = list(data[0].keys())
-
-            # Convert list of dicts to list of tuples
-            rows = []
-            for row_dict in data:
-                row_tuple = tuple(row_dict.get(col) for col in columns)
-                rows.append(row_tuple)
-
-            # Use insert_batch method
-            row_count = self.insert_batch(table_name, columns, rows)
-
-            # Disable IDENTITY_INSERT if it was enabled
-            if identity_columns:
-                self.set_identity_insert(table_name, False)
-
-            return row_count
-
+                logger.info(f"🔑 IDENTITY columns provided for {table_name}: {identity_columns}")
+                identity_enabled = self.set_identity_insert(table_name, True)
+                
+                if not identity_enabled:
+                    logger.warning(f"Could not enable IDENTITY_INSERT for {table_name}")
+            
+            try:
+                # Execute batch insert
+                logger.info(f"Executing batch insert of {len(rows)} rows...")
+                row_count = self.insert_batch(table_name, columns, rows)
+                
+                # Note: IDENTITY reseeding is automatic in SQL Server after insert
+                
+                return row_count
+                
+            finally:
+                # Always disable IDENTITY_INSERT if it was enabled
+                if identity_enabled:
+                    self.set_identity_insert(table_name, False)
+                    
         except Exception as e:
-            # Make sure to disable IDENTITY_INSERT even if error occurs
+            logger.error(f"Bulk insert failed for {table_name}: {e}")
+            # Disable IDENTITY_INSERT in case of error
             if identity_columns:
                 try:
                     self.set_identity_insert(table_name, False)
                 except:
                     pass
-            logger.error(f"Bulk insert failed for {table_name}: {e}")
             raise
+
+    def get_table_row_count(self, table_name: str, schema: str = "dbo") -> int:
+        """
+        Get the number of rows in a table
+
+        Args:
+            table_name: Name of the table
+            schema: Schema name (default: dbo)
+
+        Returns:
+            Number of rows
+        """
+        try:
+            query = f"SELECT COUNT(*) FROM [{schema}].[{table_name}]"
+            cursor = self.connection.cursor()
+            cursor.execute(query)
+            count = cursor.fetchone()[0]
+            cursor.close()
+            return count
+        except Exception as e:
+            logger.error(f"Failed to get row count for {table_name}: {e}")
+            return 0
 
     def __enter__(self):
         """Context manager entry"""

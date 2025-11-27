@@ -1,0 +1,14 @@
+# SQL Server TABLE: REGIONS
+
+**Source**: SQL Server (Converted)  
+**Captured**: 2025-11-26 11:57:46  
+
+## Source Code
+
+```sql
+CREATE TABLE [APP].[REGIONS] (
+    [REGION_ID] DECIMAL(38,0) IDENTITY(1,1) NOT NULL,
+    [REGION_NAME] NVARCHAR(50) NOT NULL,
+    CONSTRAINT [PK_REGIONS] PRIMARY KEY ([REGION_ID])
+);
+```

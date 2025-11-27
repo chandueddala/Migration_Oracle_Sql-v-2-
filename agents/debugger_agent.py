@@ -22,8 +22,8 @@ class DebuggerAgent:
     Agent responsible for debugging and repairing SQL Server errors
     Uses Claude Sonnet for efficient error analysis and repair
     """
-    
-    def __init__(self, cost_tracker: CostTracker = None, migration_options: Dict = None):
+
+    def __init__(self, cost_tracker: CostTracker = None, migration_options: Dict = None, memory=None):
         self.model = ChatAnthropic(
             model=CLAUDE_SONNET_MODEL,
             temperature=0.1,  # Low temperature for consistent fixes
@@ -32,7 +32,8 @@ class DebuggerAgent:
         self.cost_tracker = cost_tracker
         self.migration_options = migration_options or {}
         self.max_attempts = MAX_REPAIR_ATTEMPTS
-        logger.info(f"Debugger Agent initialized (max {self.max_attempts} attempts)")
+        self.memory = memory  # Migration memory for reusing solutions
+        logger.info(f"Debugger Agent initialized (max {self.max_attempts} attempts, memory: {memory is not None})")
 
     def deploy_with_repair(self,
                           sql_code: str,
@@ -161,6 +162,27 @@ class DebuggerAgent:
                     })
 
                     if attempt < self.max_attempts:
+                        # Search the web for error solutions
+                        web_search_text = None
+                        try:
+                            from external_tools.web_search import search_for_error_solution, format_search_results_for_llm
+                            search_results = search_for_error_solution(error_msg, object_type)
+                            if search_results:
+                                web_search_text = format_search_results_for_llm(search_results)
+                                logger.info(f"Web search found {len(search_results.get('sources', []))} solutions for error")
+                        except Exception as e:
+                            logger.warning(f"Web search failed: {e}")
+
+                        # Get solutions from memory
+                        memory_solutions = []
+                        if self.memory:
+                            try:
+                                memory_solutions = self.memory.get_error_solutions(error_msg, limit=3)
+                                if memory_solutions:
+                                    logger.info(f"Memory found {len(memory_solutions)} similar solutions")
+                            except Exception as e:
+                                logger.warning(f"Memory retrieval failed: {e}")
+
                         # Try to repair using AGENTIC approach
                         repair_result = self.debug_and_repair(
                             sql_code=sql_code,
@@ -168,8 +190,8 @@ class DebuggerAgent:
                             object_name=object_name,
                             object_type=object_type,
                             error_history=error_history,
-                            web_search_results=None,
-                            memory_solutions=[],
+                            web_search_results=web_search_text,
+                            memory_solutions=memory_solutions,
                             cost_tracker=self.cost_tracker,
                             oracle_code=oracle_code,
                             sqlserver_creds=sqlserver_creds
@@ -178,6 +200,22 @@ class DebuggerAgent:
                         if repair_result.get("status") == "success":
                             sql_code = repair_result.get("fixed_sql", sql_code)
                             logger.info(f"Generated repair for {object_name}")
+
+                            # Store successful solution in memory for future use
+                            if self.memory:
+                                try:
+                                    self.memory.store_error_solution(error_msg, {
+                                        "object_name": object_name,
+                                        "object_type": object_type,
+                                        "error_message": error_msg,
+                                        "oracle_code": oracle_code or "",
+                                        "fixed_sql": sql_code,
+                                        "solution": f"Successfully fixed after {attempt} attempts",
+                                        "fix_description": repair_result.get("message", "Auto-repaired by debugger")
+                                    })
+                                    logger.info(f"Stored solution in memory for future reference")
+                                except Exception as e:
+                                    logger.warning(f"Failed to store solution in memory: {e}")
                         else:
                             logger.error(f"Repair failed: {repair_result.get('message')}")
                             break
